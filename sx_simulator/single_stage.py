@@ -17,6 +17,7 @@ from .extraction_isotherm import (
     get_proton_release,
     calc_loading_fraction,
     loading_damping_factor,
+    calc_free_NaL,
 )
 from .config import MOLAR_MASS, DEFAULT_METALS
 
@@ -29,12 +30,13 @@ def solve_single_stage(
     Q_org: float,
     extractant: str,
     C_ext: float,
+    target_pH: float = None,
     C_NaOH: float = 0.0,
     Q_NaOH: float = 0.0,
-    target_pH: float = None,
     metals: list = None,
     temperature: float = None,
     model_type: str = "sigmoid",
+    C_sulfate: float = 0.0,
 ) -> dict:
     """
     단일 Mixer-Settler stage의 평형 계산을 수행합니다.
@@ -75,23 +77,34 @@ def solve_single_stage(
     use_target_pH = target_pH is not None
 
     # 목표 pH 모드: 목표 pH에서의 평형을 직접 계산
-    if use_target_pH:
+    if target_pH is not None:
         return _solve_at_target_pH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-            extractant, C_ext, target_pH, metals, temperature,
-            model_type=model_type
+            extractant, C_ext, target_pH, metals,
+            temperature, model_type, C_sulfate
         )
     else:
         return _solve_with_fixed_NaOH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-            extractant, C_ext, C_NaOH, Q_NaOH, metals, temperature,
-            model_type=model_type
+            extractant, C_ext, C_NaOH, Q_NaOH, metals,
+            temperature, model_type, C_sulfate
         )
+
+def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float) -> float:
+    """
+    수계의 총 해리가능 양성자(H+) 몰스피드(mol/hr)를 계산합니다.
+    황산(HSO4-) 수용액의 버퍼 효과(pKa=1.99) 포함.
+    """
+    free_H = 10.0 ** (-pH)
+    Ka_HSO4 = 10.0 ** (-1.99)
+    # [HSO4-] = [H+] * C_SO4_total / (Ka + [H+])
+    bound_H = free_H * C_sulfate / (Ka_HSO4 + free_H) if C_sulfate > 0 else 0.0
+    return (free_H + bound_H) * Q_aq
 
 
 def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-                         extractant, C_ext, target_pH, metals, temperature=None,
-                         model_type="sigmoid"):
+                          extractant, C_ext, target_pH, metals,
+                          temperature=None, model_type="sigmoid", C_sulfate=0.0):
     """
     목표 pH 모드: 지정된 pH에서 평형을 계산하고, 필요한 NaOH를 역산합니다.
     로딩 한계를 반영하여 반복 수렴합니다.
@@ -181,10 +194,19 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
     # 최종 로딩률 계산
     final_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
 
-    # NaOH 필요량 역산
-    H_in = (10 ** (-pH_in)) * Q_aq
-    H_out_target = (10 ** (-target_pH)) * Q_aq
-    NaOH_consumed = H_in + total_H_released - H_out_target
+    # 추출제 사포닌화에 의한 NaOH 간접 소모량 계산
+    saponification_OH_consumed = 0.0
+    NaL_free = calc_free_NaL(target_pH, C_ext, extractant, C_org_out, metals)
+    saponification_OH_consumed = NaL_free * Q_org
+
+    # NaOH 필요량 역산 (Buffer capacity 및 사포닌화 반영)
+    total_H_in = calc_aq_protons(pH_in, Q_aq, C_sulfate)
+    total_H_out_target = calc_aq_protons(target_pH, Q_aq, C_sulfate)
+    # 염기성 영역의 OH- 보정
+    if target_pH > 7.0:
+        total_H_out_target -= Q_aq * (10.0 ** -(14.0 - target_pH))
+
+    NaOH_consumed = total_H_in + total_H_released - total_H_out_target + saponification_OH_consumed
     NaOH_consumed = max(0.0, NaOH_consumed)
 
     return {
@@ -201,7 +223,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
 
 def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                              extractant, C_ext, C_NaOH, Q_NaOH, metals,
-                             temperature=None, model_type="sigmoid"):
+                             temperature=None, model_type="sigmoid", C_sulfate=0.0):
     """
     고정 NaOH 모드: 주어진 NaOH로 pH를 반복 계산합니다.
     로딩 한계를 반영합니다.
@@ -212,12 +234,16 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
     total_H_released = 0.0
     Q_aq_eff = Q_aq + Q_NaOH
 
+    pH_low = -1.0
+    pH_high = 14.0
     pH_current = pH_in
     max_iter = 100
     tol = 1e-4
 
     for iteration in range(max_iter):
         pH_prev = pH_current
+        # Bisection update
+        pH_current = (pH_low + pH_high) / 2.0
         total_H_released = 0.0
 
         # 현재 반복의 유기상 로딩률 계산 (sigmoid만)
@@ -260,21 +286,30 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             n_H = get_proton_release(metal, extractant)
             total_H_released += n_H * max(0.0, metal_extracted)
 
-        # pH 계산
-        H_in = (10 ** (-pH_in)) * Q_aq
+        # pH balance check (Buffer capacity 및 사포닌화 반영)
+        total_H_in = calc_aq_protons(pH_in, Q_aq, C_sulfate)
         OH_added = C_NaOH * Q_NaOH
-        H_out = H_in + total_H_released - OH_added
+        
+        NaL_free = calc_free_NaL(pH_current, C_ext, extractant, C_org_out, metals)
+        saponification_OH_consumed = NaL_free * Q_org
+        OH_effective = max(0.0, OH_added - saponification_OH_consumed)
 
-        if Q_aq_eff > 0 and H_out > 0:
-            pH_current = -math.log10(max(H_out / Q_aq_eff, 1e-14))
-        elif H_out <= 0:
-            OH_excess = -H_out / Q_aq_eff if Q_aq_eff > 0 else 0
-            pH_current = 14.0 + math.log10(OH_excess) if OH_excess > 0 else 7.0
+        H_out_balance = total_H_in + total_H_released - OH_effective
+        
+        # pH_current 에 해당하는 H+ 이온량 (Q_aq_eff 기반)
+        H_out_actual = calc_aq_protons(pH_current, Q_aq_eff, C_sulfate)
+        if pH_current > 7.0:
+            H_out_actual -= Q_aq_eff * (10.0 ** -(14.0 - pH_current))
+            
+        error = H_out_balance - H_out_actual
+
+        if error > 0:
+            # We have more net H+ than pH_current reflects -> actual pH should be lower (more acidic)
+            pH_high = pH_current
         else:
-            pH_current = 7.0
+            pH_low = pH_current
 
-        pH_current = max(0.0, min(14.0, pH_current))
-        if abs(pH_current - pH_prev) < tol:
+        if (pH_high - pH_low) < tol:
             break
 
     # 최종 로딩률 계산

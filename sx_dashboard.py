@@ -11,7 +11,7 @@ import sys, os, math, copy
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "v1.6.0"
 
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
@@ -69,17 +69,17 @@ st.sidebar.title("⚗️ SX 시뮬레이터")
 st.sidebar.markdown("---")
 
 # --- Feed 조건 ---
-st.sidebar.header("📥 Feed (수계) 조건")
-col_f1, col_f2 = st.sidebar.columns(2)
-with col_f1:
-    C_Li = st.number_input("Li (g/L)", 0.0, 50.0, 1.5, 0.1, key="li")
-    C_Co = st.number_input("Co (g/L)", 0.0, 50.0, 3.0, 0.1, key="co")
-with col_f2:
-    C_Ni = st.number_input("Ni (g/L)", 0.0, 50.0, 5.0, 0.1, key="ni")
-    C_Mn = st.number_input("Mn (g/L)", 0.0, 50.0, 2.0, 0.1, key="mn")
+st.sidebar.header("🚰 Feed (수계) 조건")
+C_Li = st.sidebar.number_input("Li 농도 (g/L)", 0.0, 50.0, 1.5, 0.1)
+C_Ni = st.sidebar.number_input("Ni 농도 (g/L)", 0.0, 150.0, 5.0, 0.5)
+C_Co = st.sidebar.number_input("Co 농도 (g/L)", 0.0, 150.0, 3.0, 0.5)
+C_Mn = st.sidebar.number_input("Mn 농도 (g/L)", 0.0, 150.0, 2.0, 0.5)
 
-pH_feed = st.sidebar.slider("피드 pH", 0.5, 7.0, 3.0, 0.1)
-Q_aq = st.sidebar.number_input("수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
+pH_feed = st.sidebar.number_input("Feed pH", 0.0, 14.0, 3.0, 0.1)
+Q_aq = st.sidebar.number_input("Feed 수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
+
+C_sulfate = st.sidebar.number_input("총 황산염 농도 (M)", 0.0, 5.0, 0.5, 0.1)
+st.sidebar.caption("👉 Buffer Capacity 계산용 (0=순수물)")
 
 st.sidebar.markdown("---")
 
@@ -93,7 +93,7 @@ if pH_mode == "목표 pH (자동 NaOH)":
 else:
     target_pH = None
     C_NaOH = st.sidebar.number_input("NaOH 농도 (M)", 0.1, 20.0, 5.0, 0.5)
-    Q_NaOH = st.sidebar.number_input("NaOH 유량 (L/hr)", 0.0, 500.0, 12.0, 1.0)
+    Q_NaOH = st.sidebar.number_input("총 NaOH 유량 (L/hr)", 0.0, 500.0, 12.0, 1.0)
 
 st.sidebar.markdown("---")
 
@@ -140,11 +140,33 @@ n_stages = st.sidebar.slider("Stage 수", 1, 10, 4)
 # Stage별 pH 입력 (차등 모드)
 staged_pHs = None
 if pH_mode == "목표 pH (자동 NaOH)" and use_staged_pH:
-    st.sidebar.markdown("**Stage별 목표 pH:**")
+    st.sidebar.caption("Stage별 목표 pH 입력 (1단~N단):")
+    cols = st.sidebar.columns(min(n_stages, 4))
     staged_pHs = []
     for i in range(n_stages):
-        pH_val = st.sidebar.slider(f"Stage {i+1} pH", 2.0, 8.0, 3.0 + i * (5.0 / n_stages), 0.1, key=f"staged_ph_{i}")
-        staged_pHs.append(pH_val)
+        with cols[i % len(cols)]:
+            val = st.number_input(f"St.{i+1}", 2.0, 8.0, float(target_pH), 0.1, key=f"stage_ph_{i}")
+            staged_pHs.append(val)
+
+# NaOH 분배 전략 (고정 NaOH 모드)
+naoh_strategy = "uniform"
+naoh_weights = None
+if pH_mode == "고정 NaOH":
+    st.sidebar.markdown("---")
+    st.sidebar.header("💧 NaOH 분배 전략")
+    naoh_strategy_label = st.sidebar.selectbox("분배 방식", ["균등 (Uniform)", "전단집중 (Front-loaded)", "커스텀 (Custom)"])
+    naoh_strategy_map = {"균등 (Uniform)": "uniform", "전단집중 (Front-loaded)": "front_loaded", "커스텀 (Custom)": "custom"}
+    naoh_strategy = naoh_strategy_map[naoh_strategy_label]
+
+    if naoh_strategy == "custom":
+        st.sidebar.caption("각 Stage별 가중치 (비율) 입력:")
+        cols = st.sidebar.columns(min(n_stages, 4))
+        naoh_weights = []
+        for i in range(n_stages):
+            with cols[i % len(cols)]:
+                w = st.number_input(f"St.{i+1}", 0.0, 10.0, 1.0, 0.1, key=f"naoh_w_{i}")
+                naoh_weights.append(w)
+
 
 st.sidebar.markdown("---")
 
@@ -194,8 +216,8 @@ C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn}
 # =============================================================================
 # 탭 구성
 # =============================================================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "📊 시뮬레이션 결과", "📐 모델 수식", "📈 pH Isotherm",
+tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab7 = st.tabs([
+    "📊 시뮬레이션 결과", "📐 모델 수식", "📈 pH Isotherm", "📉 McCabe-Thiele",
     "🔬 추출제 비교", "📋 상세 데이터", "📝 데이터 피팅", "📜 변경 이력"
 ])
 
@@ -210,6 +232,7 @@ with st.spinner("시뮬레이션 계산 중..."):
         n_stages=n_stages, metals=metals,
         temperature=temperature,
         model_type=model_type,
+        C_sulfate=C_sulfate,
     )
 
     if pH_mode == "목표 pH (자동 NaOH)":
@@ -220,6 +243,9 @@ with st.spinner("시뮬레이션 계산 중..."):
     else:
         sim_kwargs["C_NaOH"] = C_NaOH
         sim_kwargs["Q_NaOH"] = Q_NaOH
+        sim_kwargs["naoh_strategy"] = naoh_strategy
+        if naoh_weights is not None:
+            sim_kwargs["naoh_weights"] = naoh_weights
 
     result = solve_multistage_countercurrent(**sim_kwargs)
 
@@ -281,10 +307,11 @@ with tab1:
 
     with col_ph:
         st.subheader("📉 Stage별 pH 프로파일")
-        stages_x = list(range(1, n_stages + 1))
+        stages_x = [0] + list(range(1, n_stages + 1))
+        pH_y = [float(pH_feed)] + result["pH_profile"]
         fig_ph = go.Figure()
         fig_ph.add_trace(go.Scatter(
-            x=stages_x, y=result["pH_profile"],
+            x=stages_x, y=pH_y,
             mode='lines+markers', name='pH',
             line=dict(color='#e94560', width=3),
             marker=dict(size=12, symbol='circle'),
@@ -292,22 +319,31 @@ with tab1:
         fig_ph.update_layout(
             xaxis_title="Stage", yaxis_title="pH",
             height=350, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(dtick=1),
+            xaxis=dict(
+                tickmode='array',
+                tickvals=stages_x,
+                ticktext=["Feed"] + [f"St.{i}" for i in range(1, n_stages + 1)]
+            ),
         )
         st.plotly_chart(fig_ph, use_container_width=True)
 
     with col_naoh:
         st.subheader("🧪 Stage별 NaOH 소비량")
         fig_naoh = go.Figure()
+        naoh_y = [0.0] + result["NaOH_profile"]
         fig_naoh.add_trace(go.Bar(
-            x=stages_x, y=result["NaOH_profile"],
-            marker_color='#0f3460', text=[f"{v:.1f}" for v in result["NaOH_profile"]],
+            x=stages_x, y=naoh_y,
+            marker_color='#0f3460', text=[f"{v:.1f}" if v > 0 else "" for v in naoh_y],
             textposition='outside',
         ))
         fig_naoh.update_layout(
             xaxis_title="Stage", yaxis_title="NaOH (mol/hr)",
             height=350, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(dtick=1),
+            xaxis=dict(
+                tickmode='array',
+                tickvals=stages_x,
+                ticktext=["Feed"] + [f"St.{i}" for i in range(1, n_stages + 1)]
+            ),
         )
         st.plotly_chart(fig_naoh, use_container_width=True)
 
@@ -380,7 +416,108 @@ with tab3:
     st.dataframe(pd.DataFrame(ph50_data), use_container_width=True, hide_index=True)
 
 # =============================================================================
-# TAB 3: 추출제 비교
+# TAB 8: McCabe-Thiele 다이어그램
+# =============================================================================
+with tab8:
+    st.subheader("📉 McCabe-Thiele 다이어그램")
+    st.markdown("선택한 금속에 대한 조작선(Operating Line)과 평형 곡선(Equilibrium Curve)을 표시합니다.")
+    
+    mt_metal = st.selectbox("다이어그램을 그릴 금속 선택", metals, index= metals.index("Co") if "Co" in metals else 0)
+    
+    # 평형 곡선 생성을 위한 기준 pH (최종 후액 pH 기준)
+    ref_pH = result["pH_profile"][-1]
+    st.caption(f"💡 평형 곡선은 최종 후액 기준 pH ({ref_pH:.2f}) 로 계산되었습니다.")
+    
+    # X축(수계 농도) 범위 설정 (후액 ~ 피드)
+    x_max = C_aq_feed[mt_metal] * 1.2
+    x_vals = np.linspace(0, x_max, 100)
+    
+    # 평형 곡선 계산
+    eq_y_vals = []
+    for x in x_vals:
+        # 단일 금속만 존재한다고 단순 가정하여 Isotherm 곡선 생성
+        if model_type == "esi":
+            D = esi_distribution_coefficient(ref_pH, mt_metal, extractant, C_ext)
+        else:
+            D = distribution_coefficient(ref_pH, mt_metal, extractant, C_ext, temperature)
+            # 로딩 감쇠 적용 (단일 금속 근사)
+            from sx_simulator.extraction_isotherm import loading_damping_factor
+            sim_org = {mt_metal: D * x}
+            from sx_simulator.extraction_isotherm import calc_loading_fraction
+            loading = calc_loading_fraction(sim_org, extractant, C_ext, [mt_metal])
+            D = D * loading_damping_factor(loading)
+        
+        # y = D * x
+        y = D * x
+        eq_y_vals.append(y)
+        
+    fig_mt = go.Figure()
+    
+    # 1. 평형 곡선
+    fig_mt.add_trace(go.Scatter(x=x_vals, y=eq_y_vals, mode='lines', name='Equilibrium Curve (평형선)', line=dict(color='blue', width=2)))
+    
+    # 2. 조작선 (Operating Line)
+    # y = (Q_aq / Q_org) * x + (y_in - (Q_aq / Q_org) * x_in)
+    # 여기서 x_in 은 feed, y_in 은 result['loaded_organic'][metal]
+    slope = Q_aq / Q_org
+    x_in_feed = C_aq_feed[mt_metal]
+    y_out_org = result['loaded_organic'][mt_metal]
+    x_out_raff = result['raffinate'][mt_metal]
+    y_in_org = 0.0 # fresh solvent
+    
+    fig_mt.add_trace(go.Scatter(
+        x=[x_out_raff, x_in_feed], 
+        y=[y_in_org, y_out_org], 
+        mode='lines', name='Operating Line (조작선)', 
+        line=dict(color='red', width=2, dash='dash')
+    ))
+    
+    # 3. Stage 단계 그리기
+    stage_x = []
+    stage_y = []
+    
+    # 역류 추출이므로 (x_out, y_in) 에서 시작.
+    # Stage N(마지막 단, x_raff, y_in) -> 평형선 위 (x_raff, y_stage_N) 
+    # -> 조작선 표면 -> ...
+    current_x = x_out_raff
+    current_y = y_in_org
+    
+    stage_x.append(current_x)
+    stage_y.append(current_y)
+    
+    # 실제 시뮬레이션된 단수 포인트들을 기반으로 단계 그리기
+    for s_idx in range(n_stages-1, -1, -1):
+        # 수직선: 수계 농도는 유지, 유기상 농도가 평형(또는 실제 stage 출구)으로 이동
+        actual_y = result['stages'][s_idx]['C_org_out'][mt_metal]
+        stage_x.append(current_x)
+        stage_y.append(actual_y)
+        
+        # 수평선: 유기상 농도는 유지, 수계 농도가 다음 stage(또는 feed) 입구로 이동
+        # 조작선 상의 해당 x점 찾기
+        current_y = actual_y
+        current_x = result['stages'][s_idx]['C_aq_in'][mt_metal]
+        stage_x.append(current_x)
+        stage_y.append(current_y)
+        
+    fig_mt.add_trace(go.Scatter(
+        x=stage_x, y=stage_y,
+        mode='lines+markers', name='Stages (실제 단수)',
+        line=dict(color='green', width=2, shape='hv'),
+        marker=dict(size=8, symbol='circle')
+    ))
+    
+    fig_mt.update_layout(
+        title=f"McCabe-Thiele for {mt_metal}",
+        xaxis_title=f"Aqueous {mt_metal} (g/L)",
+        yaxis_title=f"Organic {mt_metal} (g/L)",
+        height=600,
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+        legend=dict(x=0.01, y=0.99),
+    )
+    st.plotly_chart(fig_mt, use_container_width=True)
+
+# =============================================================================
+# TAB 4: 추출제 비교
 # =============================================================================
 with tab4:
     st.subheader("🔬 Cyanex 272 vs D2EHPA 비교")

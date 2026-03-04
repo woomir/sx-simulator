@@ -4,6 +4,22 @@
 
 형식: [Semantic Versioning](https://semver.org/lang/ko/)
 
+## [v1.6.0] - 2026-03-04
+
+### ✨ 고도화 및 신규 기능 (Proton Balance)
+
+- ⚖️ **NaOH 총량 분배 전략 및 목표 pH 최적화**
+  - 고정 NaOH 모드 시 균등(Uniform), 전단집중(Front-loaded), 커스텀 비율 분배 지원
+  - 단일 목표 pH 설정 시, 이분법(Bisection)을 사용하여 다단 시뮬레이션의 최종(Raffinate) pH가 목표치에 도달하도록 총 NaOH 자동 최적화
+- 🧪 **Proton Balance 물질수지 정밀화**
+  - 수계 버퍼 용량(Buffer Capacity) 모델 추가: 황산염(Sulfate) 해리 평형(pKa=1.99)에 기반하여 pH 변화 저항력 반영 (사이드바 황산염 농도 설정 추가)
+  - 추출제 사포닌화(Saponification)에 의한 염기(OH⁻) 소모량을 물질수지에 반영하여 고pH 영역 계산 불일치 해결
+  - 다단 고정 NaOH 모드에서 발생하는 pH 진동 발산을 개선하기 위한 Bisection Solver 도입
+- 📉 **McCabe-Thiele 다이어그램 기능 추가**
+  - 특정 금속에 대하여 Isotherm 평형 곡선(Equilibrium Curve)과 조작선(Operating Line), 역류 Stage 단수 프로파일을 직관적으로 시각화하는 탭 추가
+- 📊 **차트 시각화 강화**
+  - 단수별 pH 프로파일 및 NaOH 시각화에서 'Feed' 지점 추가. pH 증감을 한눈에 파악 가능
+
 ## [v1.5.0] - 2026-03-04
 
 ### ✨ 추가
