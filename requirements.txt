@@ -1,4 +1,5 @@
 streamlit>=1.30.0
 plotly>=5.18.0
 pandas>=2.0.0
-# v1.3.0 - extractant loading limit
+scipy>=1.11.0
+# v1.5.0 - experimental data fitting
