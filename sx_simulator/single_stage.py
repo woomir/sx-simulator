@@ -13,7 +13,6 @@ Single Stage Module
 import math
 from .extraction_isotherm import (
     distribution_coefficient,
-    esi_distribution_coefficient,
     get_proton_release,
     calc_loading_fraction,
     loading_damping_factor,
@@ -35,7 +34,6 @@ def solve_single_stage(
     Q_NaOH: float = 0.0,
     metals: list = None,
     temperature: float = None,
-    model_type: str = "sigmoid",
     C_sulfate: float = 0.0,
 ) -> dict:
     """
@@ -45,10 +43,8 @@ def solve_single_stage(
     1. **고정 NaOH 모드** (target_pH = None): 주어진 NaOH 유량/농도로 계산
     2. **목표 pH 모드** (target_pH = 값): 지정한 pH를 달성하는 데 필요한 NaOH를 자동 계산
 
-    모델 유형:
-    - "sigmoid": 시그모이드 경험적 모델 (로딩 감쇠 포함)
-    - "esi": ESI 열역학 모델 (추출제 경쟁 자동 반영)
-
+    4. 추출제 로딩 한계: 유기상 로딩률에 따른 D값 감쇠 (금속 경쟁)
+    
     Parameters
     ----------
     C_aq_in : dict   — 수계 입구 금속 농도 {금속: g/L}
@@ -63,7 +59,6 @@ def solve_single_stage(
     target_pH : float — 목표 pH (None이면 고정 NaOH 모드)
     metals : list    — 계산할 금속 리스트
     temperature : float — 온도 (°C)
-    model_type : str  — 모델 유형 ("sigmoid" 또는 "esi")
 
     Returns
     -------
@@ -81,13 +76,13 @@ def solve_single_stage(
         return _solve_at_target_pH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             extractant, C_ext, target_pH, metals,
-            temperature, model_type, C_sulfate
+            temperature, C_sulfate
         )
     else:
         return _solve_with_fixed_NaOH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             extractant, C_ext, C_NaOH, Q_NaOH, metals,
-            temperature, model_type, C_sulfate
+            temperature, C_sulfate
         )
 
 def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float) -> float:
@@ -104,7 +99,7 @@ def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float) -> float:
 
 def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                           extractant, C_ext, target_pH, metals,
-                          temperature=None, model_type="sigmoid", C_sulfate=0.0):
+                          temperature=None, C_sulfate=0.0):
     """
     목표 pH 모드: 지정된 pH에서 평형을 계산하고, 필요한 NaOH를 역산합니다.
     로딩 한계를 반영하여 반복 수렴합니다.
@@ -126,21 +121,12 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         total_H_released = 0.0
 
         for metal in metals:
-            # 모델에 따른 D 계산
-            if model_type == "esi":
-                # ESI: 유기상 로딩에 의한 [NaL] 감소가 자동 반영
-                D = esi_distribution_coefficient(
-                    target_pH, metal, extractant, C_ext,
-                    C_org=C_org_out if load_iter > 0 else C_org_in,
-                    metals=metals
-                )
-            else:
-                # Sigmoid + 로딩 감쇠
-                D_raw = distribution_coefficient(
-                    target_pH, metal, extractant, C_ext,
-                    temperature=temperature
-                )
-                D = D_raw * damping
+            # Sigmoid + 로딩 감쇠
+            D_raw = distribution_coefficient(
+                target_pH, metal, extractant, C_ext,
+                temperature=temperature
+            )
+            D = D_raw * damping
 
             MW = MOLAR_MASS[metal]
 
@@ -172,24 +158,13 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             n_H = get_proton_release(metal, extractant)
             total_H_released += n_H * max(0.0, metal_extracted)
 
-        # 수렴 계산 (모델에 따라 다른 방식)
-        if model_type == "esi":
-            # ESI: C_org_out 변화로 수렴 판단
-            if load_iter > 0:
-                max_diff = max(
-                    abs(C_org_out.get(m, 0) - prev_org.get(m, 0)) for m in metals
-                )
-                if max_diff < loading_tol:
-                    break
-            prev_org = dict(C_org_out)
-        else:
-            # Sigmoid: 감쇠값 수렴 판단
-            new_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
-            new_damping = loading_damping_factor(new_loading)
-            damping_prev = damping
-            damping = relaxation * new_damping + (1 - relaxation) * damping
-            if load_iter > 0 and abs(damping - damping_prev) < loading_tol:
-                break
+        # Sigmoid: 감쇠값 수렴 판단
+        new_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
+        new_damping = loading_damping_factor(new_loading)
+        damping_prev = damping
+        damping = relaxation * new_damping + (1 - relaxation) * damping
+        if load_iter > 0 and abs(damping - damping_prev) < loading_tol:
+            break
 
     # 최종 로딩률 계산
     final_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
@@ -223,7 +198,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
 
 def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                              extractant, C_ext, C_NaOH, Q_NaOH, metals,
-                             temperature=None, model_type="sigmoid", C_sulfate=0.0):
+                             temperature=None, C_sulfate=0.0):
     """
     고정 NaOH 모드: 주어진 NaOH로 pH를 반복 계산합니다.
     로딩 한계를 반영합니다.
@@ -247,24 +222,16 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         total_H_released = 0.0
 
         # 현재 반복의 유기상 로딩률 계산 (sigmoid만)
-        if model_type != "esi":
-            loading_frac = calc_loading_fraction(
-                C_org_out if C_org_out else C_org_in,
-                extractant, C_ext, metals)
-            damping = loading_damping_factor(loading_frac)
+        loading_frac = calc_loading_fraction(
+            C_org_out if C_org_out else C_org_in,
+            extractant, C_ext, metals)
+        damping = loading_damping_factor(loading_frac)
 
         for metal in metals:
-            if model_type == "esi":
-                D = esi_distribution_coefficient(
-                    pH_current, metal, extractant, C_ext,
-                    C_org=C_org_out if C_org_out else C_org_in,
-                    metals=metals
-                )
-            else:
-                D_raw = distribution_coefficient(
-                    pH_current, metal, extractant, C_ext,
-                    temperature=temperature)
-                D = D_raw * damping  # 로딩에 의한 감쇠
+            D_raw = distribution_coefficient(
+                pH_current, metal, extractant, C_ext,
+                temperature=temperature)
+            D = D_raw * damping  # 로딩에 의한 감쇠
             MW = MOLAR_MASS[metal]
             C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
             C_org_mol_in = C_org_in.get(metal, 0.0) / MW

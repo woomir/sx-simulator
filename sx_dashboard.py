@@ -29,13 +29,12 @@ import pandas as pd
 from sx_simulator.extraction_isotherm import (
     extraction_efficiency, compute_all_extractions, get_effective_pH50,
     get_effective_k, distribution_coefficient, calc_loading_fraction,
-    esi_distribution_coefficient, calc_free_NaL,
 )
 from sx_simulator.multistage_sx import solve_multistage_countercurrent
 from sx_simulator.config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
-                                  T_REF, MAX_LOADING_FRACTION, ESI_PARAMS)
+                                  T_REF, MAX_LOADING_FRACTION)
 from sx_simulator.fitting import (
-    fit_sigmoid, fit_esi, sigmoid_model, extraction_to_D
+    fit_sigmoid, sigmoid_model, extraction_to_D
 )
 
 # =============================================================================
@@ -102,27 +101,6 @@ st.sidebar.header("🫗 유기계 (용매) 조건")
 extractant = st.sidebar.selectbox("추출제", ["Cyanex 272", "D2EHPA"])
 C_ext = st.sidebar.number_input("추출제 농도 (M)", 0.05, 5.0, 0.5, 0.05)
 Q_org = st.sidebar.number_input("유기계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
-
-# --- 모델 선택 ---
-st.sidebar.markdown("---")
-st.sidebar.header("🧪 추출 모델 선택")
-model_options = {
-    "Sigmoid (경험적)": "sigmoid",
-    "ESI (열역학)": "esi",
-}
-# D2EHPA는 ESI 파라미터 없음
-if extractant not in ESI_PARAMS:
-    available_models = {"Sigmoid (경험적)": "sigmoid"}
-    st.sidebar.info(f"{extractant}은 ESI 모델 파라미터가 없습니다.")
-else:
-    available_models = model_options
-
-model_label = st.sidebar.radio("모델 유형", list(available_models.keys()), index=0)
-model_type = available_models[model_label]
-
-if model_type == "esi":
-    st.sidebar.caption("📚 Lu et al. (2024) SPT 335, Table 2 파라미터")
-    st.sidebar.warning("⚠️ NaCl 시스템 기반. Sulfate 시스템은 재피팅 필요.")
 
 # --- 온도 설정 ---
 st.sidebar.markdown("---")
@@ -231,7 +209,6 @@ with st.spinner("시뮬레이션 계산 중..."):
         extractant=extractant, C_ext=C_ext,
         n_stages=n_stages, metals=metals,
         temperature=temperature,
-        model_type=model_type,
         C_sulfate=C_sulfate,
     )
 
@@ -436,16 +413,13 @@ with tab8:
     eq_y_vals = []
     for x in x_vals:
         # 단일 금속만 존재한다고 단순 가정하여 Isotherm 곡선 생성
-        if model_type == "esi":
-            D = esi_distribution_coefficient(ref_pH, mt_metal, extractant, C_ext)
-        else:
-            D = distribution_coefficient(ref_pH, mt_metal, extractant, C_ext, temperature)
-            # 로딩 감쇠 적용 (단일 금속 근사)
-            from sx_simulator.extraction_isotherm import loading_damping_factor
-            sim_org = {mt_metal: D * x}
-            from sx_simulator.extraction_isotherm import calc_loading_fraction
-            loading = calc_loading_fraction(sim_org, extractant, C_ext, [mt_metal])
-            D = D * loading_damping_factor(loading)
+        D = distribution_coefficient(ref_pH, mt_metal, extractant, C_ext, temperature)
+        # 로딩 감쇠 적용 (단일 금속 근사)
+        from sx_simulator.extraction_isotherm import loading_damping_factor
+        sim_org = {mt_metal: D * x}
+        from sx_simulator.extraction_isotherm import calc_loading_fraction
+        loading = calc_loading_fraction(sim_org, extractant, C_ext, [mt_metal])
+        D = D * loading_damping_factor(loading)
         
         # y = D * x
         y = D * x
@@ -848,7 +822,7 @@ with tab2:
 with tab6:
     st.subheader("📝 실험 데이터 피팅")
     st.markdown("""
-    실험 데이터(pH vs 추출률)를 업로드하여 시그모이드 또는 ESI 모델 파라미터를 자동으로 피팅합니다.
+    실험 데이터(pH vs 추출률)를 업로드하여 시그모이드 모델 파라미터를 자동으로 피팅합니다.
     피팅된 파라미터는 시뮬레이션에 적용할 수 있습니다.
     """)
 
@@ -894,16 +868,8 @@ with tab6:
                 # --- 피팅 설정 ---
                 st.markdown("---")
                 st.markdown("#### ⚙️ 피팅 설정")
-                fit_col1, fit_col2 = st.columns(2)
-                with fit_col1:
-                    fit_model = st.selectbox("피팅 모델", ["Sigmoid", "ESI"], index=0)
-                with fit_col2:
-                    if fit_model == "ESI":
-                        fit_ao = st.number_input("A/O 비 (추출률→D 변환용)", 0.1, 10.0, 1.0, 0.1)
-                        fit_cext = st.number_input("추출제 농도 (M)", 0.05, 5.0, float(C_ext), 0.05, key="fit_cext")
-                    else:
-                        fit_ao = 1.0
-                        fit_cext = C_ext
+                # Only Sigmoid model is supported for fitting.
+                fit_model = "Sigmoid" # Implicitly set to Sigmoid
 
                 # --- 피팅 실행 ---
                 if st.button("🚀 피팅 실행", type="primary", use_container_width=True):
@@ -921,11 +887,7 @@ with tab6:
 
                         st.markdown(f"##### 🔹 {metal_name}")
 
-                        if fit_model == "Sigmoid":
-                            result = fit_sigmoid(pH_vals, E_vals)
-                        else:
-                            D_vals = extraction_to_D(E_vals, ao_ratio=fit_ao)
-                            result = fit_esi(pH_vals, D_vals, fit_cext)
+                        result = fit_sigmoid(pH_vals, E_vals)
 
                         if not result["success"]:
                             st.error(f"피팅 실패: {result.get('error', 'Unknown error')}")
@@ -939,22 +901,14 @@ with tab6:
                             params = result["params"]
                             errors = result["errors"]
 
-                            if fit_model == "Sigmoid":
-                                param_df = pd.DataFrame([
-                                    {"파라미터": "pH\u2085\u2080", "값": params["pH50"],
-                                     "±95%CI": errors["pH50_err"]},
-                                    {"파라미터": "k", "값": params["k"],
-                                     "±95%CI": errors["k_err"]},
-                                    {"파라미터": "E_max (%)", "값": params["E_max"],
-                                     "±95%CI": errors["E_max_err"]},
-                                ])
-                            else:
-                                param_df = pd.DataFrame([
-                                    {"파라미터": "log(C)", "값": params["log_C"],
-                                     "±95%CI": errors["log_C_err"]},
-                                    {"파라미터": "a", "값": params["a"],
-                                     "±95%CI": errors["a_err"]},
-                                ])
+                            param_df = pd.DataFrame([
+                                {"파라미터": "pH\u2085\u2080", "값": params["pH50"],
+                                 "±95%CI": errors["pH50_err"]},
+                                {"파라미터": "k", "값": params["k"],
+                                 "±95%CI": errors["k_err"]},
+                                {"파라미터": "E_max (%)", "값": params["E_max"],
+                                 "±95%CI": errors["E_max_err"]},
+                            ])
                             st.dataframe(param_df, use_container_width=True, hide_index=True)
                             st.metric("R\u00b2", f"{result['r_squared']:.4f}")
 
@@ -972,33 +926,13 @@ with tab6:
 
                             # 피팅 곡선
                             pH_fine = np.linspace(float(min(pH_vals)) - 0.5, float(max(pH_vals)) + 0.5, 200)
-                            if fit_model == "Sigmoid":
-                                E_fit = sigmoid_model(pH_fine, params["pH50"], params["k"], params["E_max"])
-                                fig_fit.add_trace(go.Scatter(
-                                    x=pH_fine, y=E_fit,
-                                    mode="lines", name="피팅 곡선",
-                                    line=dict(color="#0f3460", width=2)
-                                ))
-                                fig_fit.update_yaxes(title="추출률 (%)")
-                            else:
-                                # ESI: log(D) vs pH
-                                K_a = 7.674e-8
-                                ratio = K_a * (10.0 ** pH_fine)
-                                NaL_fine = fit_cext * ratio / (1.0 + ratio)
-                                logD_fit = params["log_C"] + params["a"] * np.log10(np.maximum(NaL_fine, 1e-20))
-                                D_exp = extraction_to_D(E_vals, ao_ratio=fit_ao)
-                                fig_fit = go.Figure()
-                                fig_fit.add_trace(go.Scatter(
-                                    x=pH_vals, y=np.log10(np.maximum(D_exp, 1e-10)),
-                                    mode="markers", name="실험 (log D)",
-                                    marker=dict(size=10, color="#e94560")
-                                ))
-                                fig_fit.add_trace(go.Scatter(
-                                    x=pH_fine, y=logD_fit,
-                                    mode="lines", name="피팅 곡선",
-                                    line=dict(color="#0f3460", width=2)
-                                ))
-                                fig_fit.update_yaxes(title="log(D)")
+                            E_fit = sigmoid_model(pH_fine, params["pH50"], params["k"], params["E_max"])
+                            fig_fit.add_trace(go.Scatter(
+                                x=pH_fine, y=E_fit,
+                                mode="lines", name="피팅 곡선",
+                                line=dict(color="#0f3460", width=2)
+                            ))
+                            fig_fit.update_yaxes(title="추출률 (%)")
 
                             fig_fit.update_layout(
                                 title=f"{metal_name} 피팅 결과 ({fit_model})",
@@ -1009,7 +943,7 @@ with tab6:
                             st.plotly_chart(fig_fit, use_container_width=True)
 
                         # --- 파라미터 적용 버튼 (Sigmoid만) ---
-                        if fit_model == "Sigmoid" and metal_name in DEFAULT_METALS:
+                        if metal_name in DEFAULT_METALS:
                             if st.button(f"✅ {metal_name} 피팅 파라미터 적용", key=f"apply_{metal_name}"):
                                 EXTRACTANT_PARAMS[extractant][metal_name]["pH50"] = params["pH50"]
                                 EXTRACTANT_PARAMS[extractant][metal_name]["k"] = params["k"]

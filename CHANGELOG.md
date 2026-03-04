@@ -4,6 +4,12 @@
 
 형식: [Semantic Versioning](https://semver.org/lang/ko/)
 
+## [v1.7.0] - 2026-03-04
+
+### 🗑️ 제거
+
+- 사용자 요청에 따라 정확도가 낮고 부적합한 ESI 열역학 분배계수 모델 옵션 및 관련 로직/UI를 삭제
+
 ## [v1.6.0] - 2026-03-04
 
 ### ✨ 고도화 및 신규 기능 (Proton Balance)

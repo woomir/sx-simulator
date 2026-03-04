@@ -34,7 +34,6 @@ def solve_multistage_countercurrent(
     tolerance: float = None,
     max_iter: int = None,
     temperature: float = None,
-    model_type: str = "sigmoid",
     C_sulfate: float = 0.0,
 ) -> dict:
     """
@@ -101,7 +100,6 @@ def solve_multistage_countercurrent(
                         extractant=extractant, C_ext=C_ext,
                         target_pH=t_pH, metals=metals,
                         temperature=temperature,
-                        model_type=model_type,
                         C_sulfate=C_sulfate,
                     )
                 else:
@@ -112,7 +110,6 @@ def solve_multistage_countercurrent(
                         extractant=extractant, C_ext=C_ext,
                         C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
                         temperature=temperature,
-                        model_type=model_type,
                         C_sulfate=C_sulfate,
                     )
 

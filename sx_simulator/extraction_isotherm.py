@@ -13,8 +13,7 @@ pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 
 
 import math
 from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
-                     T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION,
-                     ESI_PARAMS)
+                     T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION)
 
 
 def get_effective_pH50(metal: str, extractant: str, C_ext: float,
@@ -243,39 +242,26 @@ def calc_free_NaL(pH: float, C_ext: float, extractant: str,
                   C_org: dict = None, metals: list = None) -> float:
     """
     유기상의 자유 사포닌화 추출제 농도 [NaL]_free를 계산합니다.
+    사포닌화 계산 시 ESI 모델 대신 화학양론비(n_ext)를 사용하여 근사합니다.
 
     [NaL]/[HL] = K'a × 10^pH
     C_ext_total = [HL] + [NaL] + consumed
     → [NaL]_free = (C_ext - consumed) × K'a×10^pH / (1 + K'a×10^pH)
-
-    Parameters
-    ----------
-    pH : float
-    C_ext : float — 총 추출제 농도 (mol/L)
-    extractant : str
-    C_org : dict, optional — 유기상 금속 농도 {metal: g/L}
-    metals : list, optional
-
-    Returns
-    -------
-    float — [NaL]_free (mol/L)
     """
-    if extractant not in ESI_PARAMS:
+    if extractant != "Cyanex 272":
         return 0.0
 
-    K_a = ESI_PARAMS[extractant]["K_a"]
+    K_a = 7.674e-8
 
     # 금속에 의해 소비된 추출제 몰 농도 계산
     consumed = 0.0
     if C_org and metals:
-        esi_metals = ESI_PARAMS[extractant]["metals"]
         for metal in metals:
-            if metal in esi_metals:
-                a_M = esi_metals[metal]["a"]
-                C_M_org_gL = C_org.get(metal, 0.0)
-                MW = MOLAR_MASS.get(metal, 1.0)
-                C_M_org_mol = C_M_org_gL / MW
-                consumed += a_M * C_M_org_mol
+            n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+            C_M_org_gL = C_org.get(metal, 0.0)
+            MW = MOLAR_MASS.get(metal, 1.0)
+            C_M_org_mol = C_M_org_gL / MW
+            consumed += n_ext * C_M_org_mol
 
     C_avail = max(0.0, C_ext - consumed)
 
@@ -284,49 +270,6 @@ def calc_free_NaL(pH: float, C_ext: float, extractant: str,
     NaL_free = C_avail * ratio / (1.0 + ratio)
 
     return max(0.0, NaL_free)
-
-
-def esi_distribution_coefficient(pH: float, metal: str, extractant: str,
-                                  C_ext: float, C_org: dict = None,
-                                  metals: list = None) -> float:
-    """
-    ESI 모델로 분배 계수(D)를 계산합니다.
-
-    log(D_M) = log(C_M) + a_M × log([NaL]_free)
-    → D_M = C_M × [NaL]_free^(a_M)
-
-    Parameters
-    ----------
-    pH : float
-    metal : str
-    extractant : str
-    C_ext : float
-    C_org : dict, optional — 유기상 금속 농도 (로딩 반영용)
-    metals : list, optional
-
-    Returns
-    -------
-    float — 분배 계수 D (≥ 0)
-    """
-    if extractant not in ESI_PARAMS:
-        return 0.0
-
-    esi = ESI_PARAMS[extractant]
-    if metal not in esi["metals"]:
-        return 0.0
-
-    params = esi["metals"][metal]
-    a_M = params["a"]
-    log_C_M = params["log_C"]
-    C_M = 10 ** log_C_M  # extraction constant
-
-    NaL_free = calc_free_NaL(pH, C_ext, extractant, C_org, metals)
-
-    if NaL_free <= 0:
-        return 0.0
-
-    D = C_M * (NaL_free ** a_M)
-    return max(0.0, D)
 
 
 def get_proton_release(metal: str, extractant: str) -> int:
