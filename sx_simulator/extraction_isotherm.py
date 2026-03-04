@@ -4,16 +4,21 @@ Extraction Isotherm Module
 pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 모듈.
 
 시그모이드 함수로 pH-추출률 관계를 근사:
-  E(pH) = E_max / (1 + exp(-k(T) * (pH - pH50_eff(T))))
+  E(pH, T) = E_max / (1 + exp(-k(T) · (pH - pH50(T))))
 
-여기서 pH50_eff는 추출제 농도와 온도에 의해 보정:
-  pH50_eff(T) = pH50_ref - alpha * log10(C_ext / C_ref) + beta * (T - T_ref)
+온도 보정:
+  pH50(T) = pH50(T_ref) + beta · (T - T_ref) + alpha · log(C_ext/C_ref)
   k(T)        = k_ref * exp(gamma * (T - T_ref))
+
+경쟁 추출 (Phase 3 — Mechanistic Light):
+  D_adjusted(M) = D_sigmoid(M) × ([HA]_free / C_ext)^n_ext(M)
+  Vasilyev et al. (2019)의 공유 추출제 풀 개념을 시그모이드와 결합
 """
 
 import math
 from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
-                     T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION)
+                     T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION,
+                     EXTRACTION_PRIORITY)
 
 
 def get_effective_pH50(metal: str, extractant: str, C_ext: float,
@@ -270,6 +275,137 @@ def calc_free_NaL(pH: float, C_ext: float, extractant: str,
     NaL_free = C_avail * ratio / (1.0 + ratio)
 
     return max(0.0, NaL_free)
+
+
+# =========================================================================
+# 추출제 경쟁 모델 (Phase 3 — Vasilyev-inspired)
+# =========================================================================
+
+def compute_competitive_extractions(
+    pH: float, extractant: str, C_ext: float,
+    C_aq_in: dict, C_org_in: dict,
+    Q_aq: float, Q_org: float,
+    metals: list = None,
+    temperature: float = None,
+    Q_aq_eff: float = None,
+) -> dict:
+    """
+    추출제 경쟁을 반영한 분배 계수 및 추출 결과를 계산합니다.
+
+    Vasilyev et al. (2019)의 "공유 추출제 풀" 개념을 시그모이드 모델과 결합:
+      D_adjusted(M) = D_sigmoid(M) × ([HA]_free / C_ext)^n_ext(M)
+
+    pH₅₀ 순서대로 금속을 순차 처리하며, 앞선 금속이 소비한 추출제를
+    차감하여 뒤 금속의 D를 보정합니다.
+
+    Parameters
+    ----------
+    pH : float          — 현재 pH
+    extractant : str    — 추출제 종류
+    C_ext : float       — 추출제 농도 (M)
+    C_aq_in : dict      — 수계 입구 금속 농도 {metal: g/L}
+    C_org_in : dict     — 유기계 입구 금속 농도 {metal: g/L}
+    Q_aq : float        — 수계 입구 유량 (L/hr)
+    Q_org : float       — 유기계 유량 (L/hr)
+    metals : list       — 금속 리스트
+    temperature : float — 온도 (°C)
+    Q_aq_eff : float    — 수계 출구 유량 (L/hr) (NaOH 등 추가 시, None이면 Q_aq 사용)
+
+    Returns
+    -------
+    dict:
+        {
+          "C_aq_out": {metal: g/L},
+          "C_org_out": {metal: g/L},
+          "extraction": {metal: %},
+          "D_adjusted": {metal: float},
+          "HA_free_fraction": float,  # 잔여 추출제 비율
+        }
+    """
+    if metals is None:
+        metals = DEFAULT_METALS
+    if Q_aq_eff is None:
+        Q_aq_eff = Q_aq
+
+    # 추출 우선순위: pH₅₀가 낮은 금속 먼저
+    priority = EXTRACTION_PRIORITY.get(extractant, metals)
+    ordered_metals = [m for m in priority if m in metals]
+    # priority에 없는 금속을 뒤에 추가
+    for m in metals:
+        if m not in ordered_metals:
+            ordered_metals.append(m)
+
+    # 유기상에 이미 로딩된 추출제 소비량 계산
+    ext_consumed = 0.0
+    for m in metals:
+        C_org_m = C_org_in.get(m, 0.0)
+        if C_org_m > 0:
+            MW = MOLAR_MASS[m]
+            n_ext = EXTRACTANT_PARAMS[extractant][m].get("n_ext", 2)
+            ext_consumed += n_ext * (C_org_m / MW)
+
+    HA_free = max(0.0, C_ext - ext_consumed)
+
+    C_aq_out = {}
+    C_org_out = {}
+    extraction = {}
+    D_adjusted = {}
+
+    for metal in ordered_metals:
+        MW = MOLAR_MASS[metal]
+        n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+
+        # 시그모이드 기반 D
+        D_sigmoid = distribution_coefficient(
+            pH, metal, extractant, C_ext, temperature=temperature
+        )
+
+        # 잔여 추출제 비율로 보정
+        if C_ext > 0 and HA_free > 0:
+            ratio = HA_free / C_ext
+            # 비율을 n_ext 승으로 적용 (stoichiometry 반영)
+            competition_factor = ratio ** n_ext
+            competition_factor = max(0.0, min(1.0, competition_factor))
+        else:
+            competition_factor = 0.0
+
+        D = D_sigmoid * competition_factor
+        D_adjusted[metal] = D
+
+        # 물질수지 계산
+        C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
+        C_org_mol_in = C_org_in.get(metal, 0.0) / MW
+        total_metal_flow = C_aq_mol_in * Q_aq + C_org_mol_in * Q_org
+
+        denominator = Q_aq_eff + D * Q_org
+        if denominator <= 0:
+            C_aq_mol_out = 0.0
+        else:
+            C_aq_mol_out = total_metal_flow / denominator
+        C_org_mol_out = D * C_aq_mol_out
+
+        C_aq_out[metal] = C_aq_mol_out * MW
+        C_org_out[metal] = C_org_mol_out * MW
+
+        # 추출률
+        if C_aq_mol_in > 0:
+            metal_extracted_mol = C_aq_mol_in - C_aq_mol_out * (Q_aq_eff / Q_aq)
+            extraction[metal] = max(0.0, metal_extracted_mol / C_aq_mol_in * 100.0)
+        else:
+            extraction[metal] = 0.0
+
+        # 이 금속이 유기상에서 순증가한 추출제 소비량 차감
+        delta_org_mol = C_org_mol_out - C_org_in.get(metal, 0.0) / MW
+        if delta_org_mol > 0:
+            HA_free = max(0.0, HA_free - n_ext * delta_org_mol)
+
+    return {
+        "C_aq_out": C_aq_out,
+        "C_org_out": C_org_out,
+        "extraction": extraction,
+        "D_adjusted": D_adjusted,
+        "HA_free_fraction": HA_free / C_ext if C_ext > 0 else 0.0,
+    }
 
 
 def get_proton_release(metal: str, extractant: str) -> int:

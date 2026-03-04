@@ -11,7 +11,7 @@ import sys, os, math, copy
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-APP_VERSION = "v1.6.0"
+APP_VERSION = "1.7.0"
 
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
@@ -148,6 +148,13 @@ if pH_mode == "고정 NaOH":
 
 st.sidebar.markdown("---")
 
+# --- 고급 옵션 (Phase 3) ---
+st.sidebar.header("⚙️ 고급 옵션 (Phase 3)")
+use_competition = st.sidebar.checkbox("추출제 경쟁 분배 활성", value=False, help="Vasilyev et al. (2019) 모델 기반: 수계 금속 이온 간의 공유 유기 추출제 풀 경쟁 방식을 모델에 반영하여 고로딩 조건 정합성을 개선합니다.")
+use_speciation = st.sidebar.checkbox("수계 종분화 효과 활성", value=False, help="금속 수산화물 착물(MOH⁺) 생성에 의한 추가적인 pH 완충 효과를 시뮬레이션에 반영합니다.")
+
+st.sidebar.markdown("---")
+
 # --- 모델 파라미터 편집 ---
 st.sidebar.header("📐 모델 파라미터 편집")
 edit_params = st.sidebar.checkbox("Isotherm 파라미터 수정", value=False)
@@ -210,6 +217,8 @@ with st.spinner("시뮬레이션 계산 중..."):
         n_stages=n_stages, metals=metals,
         temperature=temperature,
         C_sulfate=C_sulfate,
+        use_competition=use_competition,
+        use_speciation=use_speciation,
     )
 
     if pH_mode == "목표 pH (자동 NaOH)":

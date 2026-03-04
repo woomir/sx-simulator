@@ -35,6 +35,8 @@ def solve_multistage_countercurrent(
     max_iter: int = None,
     temperature: float = None,
     C_sulfate: float = 0.0,
+    use_competition: bool = False,
+    use_speciation: bool = False,
 ) -> dict:
     """
     역류 다단 Mixer-Settler 시뮬레이션.
@@ -101,6 +103,8 @@ def solve_multistage_countercurrent(
                         target_pH=t_pH, metals=metals,
                         temperature=temperature,
                         C_sulfate=C_sulfate,
+                        use_competition=use_competition,
+                        use_speciation=use_speciation,
                     )
                 else:
                     q_naoh = Q_NaOH_dist[stage_num - 1]
@@ -111,6 +115,8 @@ def solve_multistage_countercurrent(
                         C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
                         temperature=temperature,
                         C_sulfate=C_sulfate,
+                        use_competition=use_competition,
+                        use_speciation=use_speciation,
                     )
 
                 stage_results.append(result)
