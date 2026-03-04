@@ -14,6 +14,7 @@ SX Simulator Configuration
   - k        : 시그모이드 기울기 (전이 급격도)
   - E_max    : 최대 추출률 (%)
   - n_H      : 금속 1몰 추출 시 방출되는 H⁺ 몰수
+  - n_ext    : 금속 1몰 추출 시 소비되는 추출제 dimer (HA)₂ 몰수
   - alpha    : 추출제 농도 감도 계수 (pH50 보정용)
   - C_ref    : 기준 추출제 농도 (M)
 
@@ -22,9 +23,15 @@ SX Simulator Configuration
   - gamma    : k 온도 계수 (°C⁻¹)    — k(T) = k(T_ref) · exp(gamma*(T - T_ref))
   양이온 추출은 발열 반응이 많아 beta < 0 (온도↑ → pH50↓ → 추출 용이)
 
+추출제 로딩 한계:
+  각 금속 추출 시 추출제 (HA)₂ dimer를 소비합니다:
+    M²⁺ + n_ext(HA)₂ → MA_n(org) + 2nH⁺
+  유기상에 로딩된 금속 총량이 추출제 용량에 근접하면 추출 효율이 감소합니다.
+
 참고 문헌:
   - ALTA-2024-LBR-Paper-OLI (Miller et al.)
   - Wang et al. (2002, 2004, 2006)
+  - Vasilyev et al. (2019) — stoichiometry 참고
 """
 
 import math
@@ -61,6 +68,7 @@ EXTRACTANT_PARAMS = {
             "k": 3.0,          # 비교적 급격한 전이
             "E_max": 99.5,     # 최대 추출률 (%)
             "n_H": 2,          # Mn²⁺ → 2H⁺ 방출
+            "n_ext": 2,        # Mn²⁺ + 2(HA)₂ → MnA₂(HA)₂ + 2H⁺
             "alpha": 0.8,      # 추출제 농도 감도
             "C_ref": 0.5,      # 기준 농도 0.5M
             "beta": -0.04,     # 온도↑ → pH50↓ (발열 반응)
@@ -71,6 +79,7 @@ EXTRACTANT_PARAMS = {
             "k": 3.5,          # 꽤 급격한 전이
             "E_max": 99.5,
             "n_H": 2,          # Co²⁺ → 2H⁺ 방출 (dimer 복합체)
+            "n_ext": 2,        # Co²⁺ + 2(HA)₂ → CoA₂(HA)₂ + 2H⁺
             "alpha": 0.8,
             "C_ref": 0.5,
             "beta": -0.05,     # Co 추출은 온도에 민감
@@ -81,6 +90,7 @@ EXTRACTANT_PARAMS = {
             "k": 2.5,          # 상대적으로 완만한 전이
             "E_max": 99.0,
             "n_H": 2,          # Ni²⁺ → 2H⁺ 방출
+            "n_ext": 2,        # Ni²⁺ + 2(HA)₂ → NiA₂(HA)₂ + 2H⁺
             "alpha": 0.7,
             "C_ref": 0.5,
             "beta": -0.03,     # Ni 추출은 온도에 상대적으로 덜 민감
@@ -91,6 +101,7 @@ EXTRACTANT_PARAMS = {
             "k": 2.0,          # 완만한 전이
             "E_max": 95.0,
             "n_H": 1,          # Li⁺ → 1H⁺ 방출
+            "n_ext": 1,        # Li⁺ + (HA)₂ → LiA·HA + H⁺
             "alpha": 0.5,
             "C_ref": 0.5,
             "beta": -0.02,     # Li 추출은 온도 영향 적음
@@ -112,6 +123,7 @@ EXTRACTANT_PARAMS = {
             "k": 3.5,
             "E_max": 99.5,
             "n_H": 2,
+            "n_ext": 2,
             "alpha": 0.9,
             "C_ref": 0.64,     # 논문 기준 0.64M
             "beta": -0.03,
@@ -122,6 +134,7 @@ EXTRACTANT_PARAMS = {
             "k": 3.0,
             "E_max": 99.5,
             "n_H": 2,
+            "n_ext": 2,
             "alpha": 0.9,
             "C_ref": 0.64,
             "beta": -0.04,
@@ -132,6 +145,7 @@ EXTRACTANT_PARAMS = {
             "k": 2.5,
             "E_max": 99.0,
             "n_H": 2,
+            "n_ext": 2,
             "alpha": 0.8,
             "C_ref": 0.64,
             "beta": -0.025,
@@ -142,6 +156,7 @@ EXTRACTANT_PARAMS = {
             "k": 2.0,
             "E_max": 90.0,     # Li 최대 추출률이 상대적으로 낮음
             "n_H": 1,
+            "n_ext": 1,
             "alpha": 0.6,
             "C_ref": 0.64,
             "beta": -0.02,
@@ -169,3 +184,6 @@ DEFAULT_AO_RATIO = 1.0      # A/O = 1:1
 # 수렴 관련 설정 (다단 역류 시뮬레이션용)
 CONVERGENCE_TOLERANCE = 1e-6
 MAX_ITERATIONS = 500
+
+# 추출제 로딩 한계 설정
+MAX_LOADING_FRACTION = 0.95   # 최대 로딩률 (추출제 용량의 95%까지 사용 가능)

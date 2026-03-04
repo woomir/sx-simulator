@@ -12,7 +12,8 @@ pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 
 """
 
 import math
-from .config import EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS, T_REF, DEFAULT_TEMPERATURE
+from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
+                     T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION)
 
 
 def get_effective_pH50(metal: str, extractant: str, C_ext: float,
@@ -153,6 +154,84 @@ def distribution_coefficient(pH: float, metal: str, extractant: str,
     E_frac = E / 100.0
     D = E_frac / (1.0 - E_frac)
     return D
+
+
+def calc_loading_fraction(C_org: dict, extractant: str, C_ext: float,
+                          metals: list = None) -> float:
+    """
+    유기상의 현재 로딩률을 계산합니다.
+
+    로딩률 = Σ(n_ext(M) × C_M,org / MW_M) / C_ext
+
+    Parameters
+    ----------
+    C_org : dict
+        유기상 금속 농도 {metal: g/L}
+    extractant : str
+    C_ext : float
+        추출제 농도 (M, mol/L)
+    metals : list, optional
+
+    Returns
+    -------
+    float
+        로딩률 (0.0 ~ 1.0+)
+    """
+    if metals is None:
+        metals = DEFAULT_METALS
+    if C_ext <= 0:
+        return 1.0
+
+    total_ext_consumed = 0.0
+    for metal in metals:
+        C_org_m = C_org.get(metal, 0.0)
+        if C_org_m <= 0:
+            continue
+        MW = MOLAR_MASS[metal]
+        n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+        # 금속 몰 농도 (mol/L) × 추출제 화학양론
+        total_ext_consumed += n_ext * (C_org_m / MW)
+
+    loading = total_ext_consumed / C_ext
+    return loading
+
+
+def loading_damping_factor(loading_fraction: float) -> float:
+    """
+    로딩률에 따른 추출 효율 감쇠 계수를 반환합니다.
+
+    감쇠 계수는 0 ~ 1 범위이며:
+    - loading << MAX_LOADING: ~1.0 (감쇠 없음)
+    - loading → MAX_LOADING: → 0.0 (추출 불가)
+
+    시그모이드 감쇠 사용 (급격한 차단 방지):
+    f = 1 / (1 + exp(12 * (L/L_max - 0.85)))
+
+    Parameters
+    ----------
+    loading_fraction : float
+        현재 로딩률 (0.0 ~ 1.0+)
+
+    Returns
+    -------
+    float
+        감쇠 계수 (0.0 ~ 1.0)
+    """
+    L_max = MAX_LOADING_FRACTION
+    if loading_fraction <= 0:
+        return 1.0
+    if loading_fraction >= L_max:
+        return 0.0
+
+    # 시그모이드 감쇠: 로딩률이 85%를 넘으면 급격히 감소
+    ratio = loading_fraction / L_max
+    exponent = 12.0 * (ratio - 0.85)
+    if exponent > 500:
+        return 0.0
+    elif exponent < -500:
+        return 1.0
+    factor = 1.0 / (1.0 + math.exp(exponent))
+    return factor
 
 
 def get_proton_release(metal: str, extractant: str) -> int:

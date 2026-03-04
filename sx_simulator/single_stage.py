@@ -7,12 +7,15 @@ Single Stage Module
 1. 수계/유기계 간 금속 분배 (분배 계수 D 기반)
 2. pH 변화 추적 (H⁺ 수지 — 금속 추출에 의한 H⁺ 방출 + NaOH 중화)
 3. 목표 pH 모드: 원하는 pH를 유지하기 위한 NaOH 자동 계산
+4. 추출제 로딩 한계: 유기상 로딩률에 따른 D값 감쇠 (금속 경쟁)
 """
 
 import math
 from .extraction_isotherm import (
     distribution_coefficient,
     get_proton_release,
+    calc_loading_fraction,
+    loading_damping_factor,
 )
 from .config import MOLAR_MASS, DEFAULT_METALS
 
@@ -38,6 +41,9 @@ def solve_single_stage(
     1. **고정 NaOH 모드** (target_pH = None): 주어진 NaOH 유량/농도로 계산
     2. **목표 pH 모드** (target_pH = 값): 지정한 pH를 달성하는 데 필요한 NaOH를 자동 계산
 
+    추출제 로딩 한계가 활성화되어 있으며, 유기상에 이미 로딩된 금속이
+    추출제 용량에 가까우면 추출 효율이 자동으로 감소합니다.
+
     Parameters
     ----------
     C_aq_in : dict   — 수계 입구 금속 농도 {금속: g/L}
@@ -51,12 +57,13 @@ def solve_single_stage(
     Q_NaOH : float   — NaOH 유량 (L/hr), 고정 NaOH 모드용
     target_pH : float — 목표 pH (None이면 고정 NaOH 모드)
     metals : list    — 계산할 금속 리스트
+    temperature : float — 온도 (°C)
 
     Returns
     -------
     dict:
         C_aq_out, C_org_out, pH_out, extraction, H_released_mol_hr,
-        NaOH_consumed_mol_hr, iterations
+        NaOH_consumed_mol_hr, loading_fraction, iterations
     """
     if metals is None:
         metals = DEFAULT_METALS
@@ -80,54 +87,77 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                          extractant, C_ext, target_pH, metals, temperature=None):
     """
     목표 pH 모드: 지정된 pH에서 평형을 계산하고, 필요한 NaOH를 역산합니다.
+    로딩 한계를 반영하여 반복 수렴합니다.
     """
     C_aq_out = {}
     C_org_out = {}
     extraction = {}
     total_H_released = 0.0
 
-    # 목표 pH에서 각 금속의 분배 계수를 계산
-    for metal in metals:
-        D = distribution_coefficient(target_pH, metal, extractant, C_ext,
-                                     temperature=temperature)
-        MW = MOLAR_MASS[metal]
+    max_loading_iter = 30
+    loading_tol = 1e-4
+    damping = 1.0  # 시작 감쇠 = 1 (제한 없음)
+    relaxation = 0.5  # under-relaxation 계수
 
-        C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
-        C_org_mol_in = C_org_in.get(metal, 0.0) / MW
+    for load_iter in range(max_loading_iter):
+        C_aq_out = {}
+        C_org_out = {}
+        extraction = {}
+        total_H_released = 0.0
 
-        total_metal_flow = C_aq_mol_in * Q_aq + C_org_mol_in * Q_org
+        # 목표 pH에서 각 금속의 분배 계수를 계산 (로딩 감쇠 적용)
+        for metal in metals:
+            D_raw = distribution_coefficient(target_pH, metal, extractant, C_ext,
+                                             temperature=temperature)
+            D = D_raw * damping  # 로딩에 의한 감쇠
+            MW = MOLAR_MASS[metal]
 
-        # 물질수지: D = C_org_out / C_aq_out
-        denominator = Q_aq + D * Q_org
-        if denominator <= 0:
-            C_aq_mol_out = 0.0
-        else:
-            C_aq_mol_out = total_metal_flow / denominator
+            C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
+            C_org_mol_in = C_org_in.get(metal, 0.0) / MW
 
-        C_org_mol_out = D * C_aq_mol_out
+            total_metal_flow = C_aq_mol_in * Q_aq + C_org_mol_in * Q_org
 
-        C_aq_out[metal] = C_aq_mol_out * MW
-        C_org_out[metal] = C_org_mol_out * MW
+            # 물질수지: D = C_org_out / C_aq_out
+            denominator = Q_aq + D * Q_org
+            if denominator <= 0:
+                C_aq_mol_out = 0.0
+            else:
+                C_aq_mol_out = total_metal_flow / denominator
 
-        # 추출된 금속량
-        metal_extracted = (C_aq_mol_in * Q_aq) - (C_aq_mol_out * Q_aq)
-        if C_aq_mol_in > 0 and C_aq_mol_in * Q_aq > 0:
-            extraction[metal] = max(0.0, metal_extracted / (C_aq_mol_in * Q_aq) * 100.0)
-        else:
-            extraction[metal] = 0.0
+            C_org_mol_out = D * C_aq_mol_out
 
-        # H⁺ 방출량 계산
-        n_H = get_proton_release(metal, extractant)
-        total_H_released += n_H * max(0.0, metal_extracted)
+            C_aq_out[metal] = C_aq_mol_out * MW
+            C_org_out[metal] = C_org_mol_out * MW
+
+            # 추출된 금속량
+            metal_extracted = (C_aq_mol_in * Q_aq) - (C_aq_mol_out * Q_aq)
+            if C_aq_mol_in > 0 and C_aq_mol_in * Q_aq > 0:
+                extraction[metal] = max(0.0, metal_extracted / (C_aq_mol_in * Q_aq) * 100.0)
+            else:
+                extraction[metal] = 0.0
+
+            # H⁺ 방출량 계산
+            n_H = get_proton_release(metal, extractant)
+            total_H_released += n_H * max(0.0, metal_extracted)
+
+        # 새로운 로딩률과 감쇠 계산
+        new_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
+        new_damping = loading_damping_factor(new_loading)
+
+        # under-relaxation으로 진동 방지
+        damping_prev = damping
+        damping = relaxation * new_damping + (1 - relaxation) * damping
+
+        # 수렴 확인
+        if load_iter > 0 and abs(damping - damping_prev) < loading_tol:
+            break
+
+    # 최종 로딩률 계산
+    final_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
 
     # NaOH 필요량 역산
-    # H⁺ 입구: [H⁺]_in × Q_aq
     H_in = (10 ** (-pH_in)) * Q_aq
-    # H⁺ 출구 (목표): [H⁺]_target × Q_aq
     H_out_target = (10 ** (-target_pH)) * Q_aq
-
-    # H⁺ 수지: H_out = H_in + H_released - NaOH_consumed
-    # NaOH_consumed = H_in + H_released - H_out_target
     NaOH_consumed = H_in + total_H_released - H_out_target
     NaOH_consumed = max(0.0, NaOH_consumed)
 
@@ -138,7 +168,8 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         "extraction": extraction,
         "H_released_mol_hr": total_H_released,
         "NaOH_consumed_mol_hr": NaOH_consumed,
-        "iterations": 1,
+        "loading_fraction": final_loading,
+        "iterations": load_iter + 1,
     }
 
 
@@ -146,6 +177,7 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                              extractant, C_ext, C_NaOH, Q_NaOH, metals, temperature=None):
     """
     고정 NaOH 모드: 주어진 NaOH로 pH를 반복 계산합니다.
+    로딩 한계를 반영합니다.
     """
     C_aq_out = {}
     C_org_out = {}
@@ -161,9 +193,15 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         pH_prev = pH_current
         total_H_released = 0.0
 
+        # 현재 반복의 유기상 로딩률 계산
+        loading_frac = calc_loading_fraction(C_org_out if C_org_out else C_org_in,
+                                              extractant, C_ext, metals)
+        damping = loading_damping_factor(loading_frac)
+
         for metal in metals:
-            D = distribution_coefficient(pH_current, metal, extractant, C_ext,
-                                         temperature=temperature)
+            D_raw = distribution_coefficient(pH_current, metal, extractant, C_ext,
+                                             temperature=temperature)
+            D = D_raw * damping  # 로딩에 의한 감쇠
             MW = MOLAR_MASS[metal]
             C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
             C_org_mol_in = C_org_in.get(metal, 0.0) / MW
@@ -202,6 +240,9 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         if abs(pH_current - pH_prev) < tol:
             break
 
+    # 최종 로딩률 계산
+    final_loading = calc_loading_fraction(C_org_out, extractant, C_ext, metals)
+
     return {
         "C_aq_out": C_aq_out,
         "C_org_out": C_org_out,
@@ -209,6 +250,7 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         "extraction": extraction,
         "H_released_mol_hr": total_H_released,
         "NaOH_consumed_mol_hr": C_NaOH * Q_NaOH,
+        "loading_fraction": final_loading,
         "iterations": iteration + 1,
     }
 
