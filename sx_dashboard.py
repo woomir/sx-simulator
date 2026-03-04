@@ -485,7 +485,7 @@ with tab8:
     stage_x.append(current_x)
     stage_y.append(current_y)
     
-    # 실제 시뮬레이션된 단수 포인트들을 기반으로 단계 그리기
+        # 실제 시뮬레이션된 단수 포인트들을 기반으로 단계 그리기
     for s_idx in range(n_stages-1, -1, -1):
         # 수직선: 수계 농도는 유지, 유기상 농도가 평형(또는 실제 stage 출구)으로 이동
         actual_y = result['stages'][s_idx]['C_org_out'][mt_metal]
@@ -495,7 +495,11 @@ with tab8:
         # 수평선: 유기상 농도는 유지, 수계 농도가 다음 stage(또는 feed) 입구로 이동
         # 조작선 상의 해당 x점 찾기
         current_y = actual_y
-        current_x = result['stages'][s_idx]['C_aq_in'][mt_metal]
+        if s_idx == 0:
+            current_x = C_aq_feed[mt_metal]
+        else:
+            current_x = result['stages'][s_idx - 1]['C_aq_out'][mt_metal]
+            
         stage_x.append(current_x)
         stage_y.append(current_y)
         
