@@ -29,6 +29,7 @@ def solve_single_stage(
     Q_NaOH: float = 0.0,
     target_pH: float = None,
     metals: list = None,
+    temperature: float = None,
 ) -> dict:
     """
     단일 Mixer-Settler stage의 평형 계산을 수행합니다.
@@ -66,17 +67,17 @@ def solve_single_stage(
     if use_target_pH:
         return _solve_at_target_pH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-            extractant, C_ext, target_pH, metals
+            extractant, C_ext, target_pH, metals, temperature
         )
     else:
         return _solve_with_fixed_NaOH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-            extractant, C_ext, C_NaOH, Q_NaOH, metals
+            extractant, C_ext, C_NaOH, Q_NaOH, metals, temperature
         )
 
 
 def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-                         extractant, C_ext, target_pH, metals):
+                         extractant, C_ext, target_pH, metals, temperature=None):
     """
     목표 pH 모드: 지정된 pH에서 평형을 계산하고, 필요한 NaOH를 역산합니다.
     """
@@ -87,7 +88,8 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
 
     # 목표 pH에서 각 금속의 분배 계수를 계산
     for metal in metals:
-        D = distribution_coefficient(target_pH, metal, extractant, C_ext)
+        D = distribution_coefficient(target_pH, metal, extractant, C_ext,
+                                     temperature=temperature)
         MW = MOLAR_MASS[metal]
 
         C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
@@ -141,7 +143,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
 
 
 def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
-                             extractant, C_ext, C_NaOH, Q_NaOH, metals):
+                             extractant, C_ext, C_NaOH, Q_NaOH, metals, temperature=None):
     """
     고정 NaOH 모드: 주어진 NaOH로 pH를 반복 계산합니다.
     """
@@ -160,7 +162,8 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         total_H_released = 0.0
 
         for metal in metals:
-            D = distribution_coefficient(pH_current, metal, extractant, C_ext)
+            D = distribution_coefficient(pH_current, metal, extractant, C_ext,
+                                         temperature=temperature)
             MW = MOLAR_MASS[metal]
             C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
             C_org_mol_in = C_org_in.get(metal, 0.0) / MW

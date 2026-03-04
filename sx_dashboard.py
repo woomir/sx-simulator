@@ -17,10 +17,10 @@ import pandas as pd
 
 from sx_simulator.extraction_isotherm import (
     extraction_efficiency, compute_all_extractions, get_effective_pH50,
-    distribution_coefficient,
+    get_effective_k, distribution_coefficient,
 )
 from sx_simulator.multistage_sx import solve_multistage_countercurrent
-from sx_simulator.config import EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS
+from sx_simulator.config import EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS, T_REF
 
 # =============================================================================
 # 페이지 설정
@@ -87,6 +87,13 @@ extractant = st.sidebar.selectbox("추출제", ["Cyanex 272", "D2EHPA"])
 C_ext = st.sidebar.number_input("추출제 농도 (M)", 0.05, 5.0, 0.5, 0.05)
 Q_org = st.sidebar.number_input("유기계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
 
+# --- 온도 설정 ---
+st.sidebar.markdown("---")
+st.sidebar.header("🌡️ 온도 설정")
+temperature = st.sidebar.slider("운전 온도 (°C)", 10.0, 60.0, 25.0, 1.0)
+if abs(temperature - T_REF) > 0.5:
+    st.sidebar.info(f"온도 보정 활성: ΔT = {temperature - T_REF:+.0f}°C")
+
 st.sidebar.markdown("---")
 
 # --- Stage 설정 ---
@@ -122,6 +129,8 @@ if edit_params:
             p["E_max"] = st.number_input(f"E_max ({metal})", 50.0, 100.0, p["E_max"], 0.5, key=f"Emax_{metal}")
             p["n_H"] = st.number_input(f"n_H ({metal})", 1, 4, p["n_H"], 1, key=f"nH_{metal}")
             p["alpha"] = st.number_input(f"α ({metal})", 0.0, 3.0, p["alpha"], 0.1, key=f"alpha_{metal}")
+            p["beta"] = st.number_input(f"β 온도계수 ({metal})", -0.2, 0.1, float(p.get("beta", 0.0)), 0.005, key=f"beta_{metal}", format="%.3f")
+            p["gamma"] = st.number_input(f"γ k-온도계수 ({metal})", -0.05, 0.05, float(p.get("gamma", 0.0)), 0.001, key=f"gamma_{metal}", format="%.3f")
 
     # 파라미터를 전역에 반영
     for ext_name in st.session_state.custom_params:
@@ -159,6 +168,7 @@ with st.spinner("시뮬레이션 계산 중..."):
         Q_aq=Q_aq, Q_org=Q_org,
         extractant=extractant, C_ext=C_ext,
         n_stages=n_stages, metals=metals,
+        temperature=temperature,
     )
 
     if pH_mode == "목표 pH (자동 NaOH)":
@@ -281,12 +291,12 @@ with tab1:
 # TAB 2: pH Isotherm 곡선
 # =============================================================================
 with tab3:
-    st.subheader(f"📈 pH-추출률 Isotherm ({extractant}, {C_ext}M)")
+    st.subheader(f"📈 pH-추출률 Isotherm ({extractant}, {C_ext}M, {temperature:.0f}°C)")
 
     fig_iso = go.Figure()
     pH_range = [x * 0.1 for x in range(10, 101)]
     for i, metal in enumerate(metals):
-        E_values = [extraction_efficiency(pH, metal, extractant, C_ext) for pH in pH_range]
+        E_values = [extraction_efficiency(pH, metal, extractant, C_ext, temperature) for pH in pH_range]
         fig_iso.add_trace(go.Scatter(
             x=pH_range, y=E_values,
             mode='lines', name=metal,
@@ -309,11 +319,13 @@ with tab3:
     st.subheader("📋 금속별 pH₅₀ (보정값)")
     ph50_data = []
     for metal in metals:
-        ph50_eff = get_effective_pH50(metal, extractant, C_ext)
+        ph50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
+        k_eff = get_effective_k(metal, extractant, temperature)
         params = EXTRACTANT_PARAMS[extractant][metal]
         ph50_data.append({
             "금속": metal, "pH₅₀ (기준)": params["pH50"],
-            "pH₅₀ (보정)": round(ph50_eff, 2), "k": params["k"],
+            "pH₅₀ (보정)": round(ph50_eff, 2), "k (기준)": params["k"],
+            "k (보정)": round(k_eff, 2),
             "E_max (%)": params["E_max"], "n_H": params["n_H"],
         })
     st.dataframe(pd.DataFrame(ph50_data), use_container_width=True, hide_index=True)
@@ -333,6 +345,7 @@ with tab4:
             Q_aq=Q_aq, Q_org=Q_org,
             extractant=ext, C_ext=ext_conc, n_stages=n_stages,
             target_pH=compare_pH, metals=metals,
+            temperature=temperature,
         )
         results_compare[ext] = r
 
@@ -369,7 +382,7 @@ with tab4:
     fig_iso_cmp = go.Figure()
     for ext, color in [("Cyanex 272", "#e94560"), ("D2EHPA", "#0f3460")]:
         ext_c = 0.5 if ext == "Cyanex 272" else 0.64
-        E_vals = [extraction_efficiency(pH, selected_metal, ext, ext_c) for pH in pH_range]
+        E_vals = [extraction_efficiency(pH, selected_metal, ext, ext_c, temperature) for pH in pH_range]
         fig_iso_cmp.add_trace(go.Scatter(
             x=pH_range, y=E_vals, mode='lines', name=ext,
             line=dict(color=color, width=3),
@@ -432,7 +445,7 @@ with tab5:
 # TAB 5 (tab5): 모델 수식 확인
 # =============================================================================
 with tab2:
-    st.subheader(f"📐 현재 모델 수식 ({extractant}, {C_ext}M)")
+    st.subheader(f"📐 현재 모델 수식 ({extractant}, {C_ext}M, {temperature:.0f}°C)")
     st.markdown("현재 사이드바에 설정된 파라미터 값이 적용된 수식입니다. "
                 "파라미터를 변경하면 수식도 실시간으로 업데이트됩니다.")
 
@@ -442,53 +455,71 @@ with tab2:
     st.markdown("---")
     st.markdown("### 1️⃣ 추출률 (Extraction Efficiency)")
     st.markdown("각 금속의 pH에 따른 추출률을 **시그모이드(Sigmoid) 함수**로 근사합니다:")
-    st.latex(r"E_M(\text{pH}) = \frac{E_{\max}}{1 + \exp\!\left(-k \cdot (\text{pH} - \text{pH}_{50,\text{eff}})\right)}")
+    st.latex(r"E_M(\text{pH}, T) = \frac{E_{\max}}{1 + \exp\!\left(-k(T) \cdot (\text{pH} - \text{pH}_{50,\text{eff}}(T))\right)}")
 
-    st.markdown("여기서 $\\text{pH}_{50,\\text{eff}}$는 추출제 농도에 따라 보정됩니다:")
-    st.latex(r"\text{pH}_{50,\text{eff}} = \text{pH}_{50,\text{ref}} - \alpha \cdot \log_{10}\!\left(\frac{C_{\text{ext}}}{C_{\text{ref}}}\right)")
+    st.markdown("여기서 $\\text{pH}_{50,\\text{eff}}$는 추출제 농도와 **온도**에 따라 보정됩니다:")
+    st.latex(r"\text{pH}_{50,\text{eff}}(T) = \text{pH}_{50,\text{ref}} - \alpha \cdot \log_{10}\!\left(\frac{C_{\text{ext}}}{C_{\text{ref}}}\right) + \beta \cdot (T - T_{\text{ref}})")
+
+    st.markdown("시그모이드 기울기 $k$도 온도에 따라 보정됩니다:")
+    st.latex(r"k(T) = k_{\text{ref}} \cdot \exp\!\left(\gamma \cdot (T - T_{\text{ref}})\right)")
+
+    if abs(temperature - T_REF) > 0.5:
+        st.info(f"🌡️ 온도 보정 활성: T = {temperature:.0f}°C (T_ref = {T_REF:.0f}°C, ΔT = {temperature - T_REF:+.0f}°C)")
 
     # 금속별 실제 수식 전개
     st.markdown("#### 금속별 적용 수식")
     for metal in metals:
         params = EXTRACTANT_PARAMS[extractant][metal]
-        ph50_eff = get_effective_pH50(metal, extractant, C_ext)
+        ph50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
+        k_eff = get_effective_k(metal, extractant, temperature)
         col_eq, col_plot = st.columns([3, 2])
 
         with col_eq:
-            st.markdown(f"**{metal}** ({extractant}):")
+            st.markdown(f"**{metal}** ({extractant}, {temperature:.0f}°C):")
             # 보정 pH50 계산 과정
-            if abs(C_ext - params['C_ref']) > 0.001:
-                log_ratio = math.log10(C_ext / params['C_ref'])
+            if abs(C_ext - params['C_ref']) > 0.001 or abs(temperature - T_REF) > 0.5:
+                parts = [f"{params['pH50']:.1f}"]
+                if abs(C_ext - params['C_ref']) > 0.001:
+                    log_ratio = math.log10(C_ext / params['C_ref'])
+                    parts.append(rf"- {params['alpha']:.1f} \times \log_{{10}}\!\left(\frac{{{C_ext}}}{{{params['C_ref']}}}\right)")
+                if abs(temperature - T_REF) > 0.5:
+                    beta = params.get('beta', 0.0)
+                    parts.append(rf"+ ({beta:.3f}) \times ({temperature - T_REF:+.0f})")
                 st.latex(
                     rf"\text{{pH}}_{{50,\text{{eff}}}}^{{\text{{{metal}}}}} = "
-                    rf"{params['pH50']:.1f} - {params['alpha']:.1f} \times "
-                    rf"\log_{{10}}\!\left(\frac{{{C_ext}}}{{{params['C_ref']}}}\right) = "
-                    rf"{params['pH50']:.1f} - {params['alpha']:.1f} \times ({log_ratio:.3f}) = "
-                    rf"\mathbf{{{ph50_eff:.2f}}}"
+                    + " ".join(parts) + rf" = \mathbf{{{ph50_eff:.2f}}}"
                 )
             else:
                 st.latex(
                     rf"\text{{pH}}_{{50,\text{{eff}}}}^{{\text{{{metal}}}}} = "
-                    rf"{params['pH50']:.1f} \quad (C_{{\text{{ext}}}} = C_{{\text{{ref}}}})"
+                    rf"{params['pH50']:.1f} \quad (C_{{\text{{ext}}}} = C_{{\text{{ref}}}}, T = T_{{\text{{ref}}}})"
+                )
+
+            # k 온도 보정
+            if abs(temperature - T_REF) > 0.5:
+                gamma = params.get('gamma', 0.0)
+                st.latex(
+                    rf"k^{{\text{{{metal}}}}}(T) = {params['k']:.1f} \times "
+                    rf"\exp({gamma:.3f} \times {temperature - T_REF:+.0f}) = \mathbf{{{k_eff:.2f}}}"
                 )
 
             # 최종 추출률 수식
             st.latex(
                 rf"E_{{\text{{{metal}}}}}(\text{{pH}}) = "
                 rf"\frac{{{params['E_max']:.1f}}}"
-                rf"{{1 + \exp\!\left(-{params['k']:.1f} \cdot "
+                rf"{{1 + \exp\!\left(-{k_eff:.2f} \cdot "
                 rf"(\text{{pH}} - {ph50_eff:.2f})\right)}}"
             )
 
         with col_plot:
             # 해당 금속의 미니 Isotherm 차트
             pHs = [x * 0.1 for x in range(10, 101)]
-            Es = [extraction_efficiency(pH, metal, extractant, C_ext) for pH in pHs]
+            Es = [extraction_efficiency(pH, metal, extractant, C_ext, temperature) for pH in pHs]
             fig_mini = go.Figure()
             fig_mini.add_trace(go.Scatter(x=pHs, y=Es, mode='lines',
                 line=dict(color=color_list[metals.index(metal)], width=2)))
             if target_pH:
-                E_at_target = extraction_efficiency(target_pH, metal, extractant, C_ext)
+                E_at_target = extraction_efficiency(target_pH, metal, extractant, C_ext, temperature)
                 fig_mini.add_trace(go.Scatter(x=[target_pH], y=[E_at_target],
                     mode='markers', marker=dict(size=12, color='red', symbol='x'),
                     name=f'pH={target_pH}'))
@@ -513,8 +544,8 @@ with tab2:
         st.markdown(f"**목표 pH = {target_pH}에서의 분배 계수:**")
         d_data = []
         for metal in metals:
-            E_val = extraction_efficiency(target_pH, metal, extractant, C_ext)
-            D_val = distribution_coefficient(target_pH, metal, extractant, C_ext)
+            E_val = extraction_efficiency(target_pH, metal, extractant, C_ext, temperature)
+            D_val = distribution_coefficient(target_pH, metal, extractant, C_ext, temperature=temperature)
             d_data.append({"금속": metal, f"E(pH={target_pH})": f"{E_val:.2f}%",
                            f"D(pH={target_pH})": f"{D_val:.4f}"})
         st.dataframe(pd.DataFrame(d_data), use_container_width=True, hide_index=True)
@@ -589,7 +620,7 @@ with tab2:
         if target_pH:
             st.markdown(f"**pH = {target_pH}에서 분리 계수:**")
             sep_data = []
-            D_vals = {m: distribution_coefficient(target_pH, m, extractant, C_ext) for m in metals}
+            D_vals = {m: distribution_coefficient(target_pH, m, extractant, C_ext, temperature=temperature) for m in metals}
             for i, m1 in enumerate(metals):
                 for m2 in metals[i+1:]:
                     alpha = D_vals[m1] / D_vals[m2] if D_vals[m2] > 0 else float('inf')
@@ -604,14 +635,17 @@ with tab2:
     param_rows = []
     for metal in metals:
         p = EXTRACTANT_PARAMS[extractant][metal]
-        ph50_eff = get_effective_pH50(metal, extractant, C_ext)
+        ph50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
+        k_eff = get_effective_k(metal, extractant, temperature)
         param_rows.append({
             "금속": metal,
             "pH₅₀ (기준)": p["pH50"],
             "α": p["alpha"],
             "C_ref (M)": p["C_ref"],
-            "pH₅₀ (보정)": round(ph50_eff, 3),
-            "k": p["k"],
+            "β": p.get("beta", 0.0),
+            "γ": p.get("gamma", 0.0),
+            f"pH₅₀ ({temperature:.0f}°C)": round(ph50_eff, 3),
+            f"k ({temperature:.0f}°C)": round(k_eff, 3),
             "E_max (%)": p["E_max"],
             "n_H": p["n_H"],
         })

@@ -17,6 +17,11 @@ SX Simulator Configuration
   - alpha    : 추출제 농도 감도 계수 (pH50 보정용)
   - C_ref    : 기준 추출제 농도 (M)
 
+온도 의존성 파라미터 (반-경험적 모델):
+  - beta     : pH50 온도 계수 (°C⁻¹) — pH50(T) = pH50(T_ref) + beta*(T - T_ref)
+  - gamma    : k 온도 계수 (°C⁻¹)    — k(T) = k(T_ref) · exp(gamma*(T - T_ref))
+  양이온 추출은 발열 반응이 많아 beta < 0 (온도↑ → pH50↓ → 추출 용이)
+
 참고 문헌:
   - ALTA-2024-LBR-Paper-OLI (Miller et al.)
   - Wang et al. (2002, 2004, 2006)
@@ -58,6 +63,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 2,          # Mn²⁺ → 2H⁺ 방출
             "alpha": 0.8,      # 추출제 농도 감도
             "C_ref": 0.5,      # 기준 농도 0.5M
+            "beta": -0.04,     # 온도↑ → pH50↓ (발열 반응)
+            "gamma": 0.005,    # 온도↑ → 전이 약간 급격해짐
         },
         "Co": {
             "pH50": 4.0,       # Mn 다음으로 추출
@@ -66,6 +73,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 2,          # Co²⁺ → 2H⁺ 방출 (dimer 복합체)
             "alpha": 0.8,
             "C_ref": 0.5,
+            "beta": -0.05,     # Co 추출은 온도에 민감
+            "gamma": 0.008,
         },
         "Ni": {
             "pH50": 5.8,       # Co보다 높은 pH에서 추출 (trimer)
@@ -74,6 +83,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 2,          # Ni²⁺ → 2H⁺ 방출
             "alpha": 0.7,
             "C_ref": 0.5,
+            "beta": -0.03,     # Ni 추출은 온도에 상대적으로 덜 민감
+            "gamma": 0.006,
         },
         "Li": {
             "pH50": 8.0,       # 매우 높은 pH에서만 추출
@@ -82,6 +93,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 1,          # Li⁺ → 1H⁺ 방출
             "alpha": 0.5,
             "C_ref": 0.5,
+            "beta": -0.02,     # Li 추출은 온도 영향 적음
+            "gamma": 0.003,
         },
     },
 
@@ -101,6 +114,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 2,
             "alpha": 0.9,
             "C_ref": 0.64,     # 논문 기준 0.64M
+            "beta": -0.03,
+            "gamma": 0.004,
         },
         "Co": {
             "pH50": 3.5,       # pH < 5에서 급격 증가
@@ -109,6 +124,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 2,
             "alpha": 0.9,
             "C_ref": 0.64,
+            "beta": -0.04,
+            "gamma": 0.006,
         },
         "Ni": {
             "pH50": 4.5,
@@ -117,6 +134,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 2,
             "alpha": 0.8,
             "C_ref": 0.64,
+            "beta": -0.025,
+            "gamma": 0.005,
         },
         "Li": {
             "pH50": 6.5,       # pH > 5.5에서 추출 시작
@@ -125,6 +144,8 @@ EXTRACTANT_PARAMS = {
             "n_H": 1,
             "alpha": 0.6,
             "C_ref": 0.64,
+            "beta": -0.02,
+            "gamma": 0.003,
         },
     },
 }
@@ -140,7 +161,8 @@ EXTRACTANT_PARAMS = {
 # =============================================================================
 DEFAULT_METALS = ["Li", "Ni", "Co", "Mn"]
 DEFAULT_EXTRACTANT = "Cyanex 272"
-DEFAULT_TEMPERATURE = 25.0  # °C
+DEFAULT_TEMPERATURE = 25.0  # °C (기준 온도, T_ref)
+T_REF = 25.0                # 온도 보정 기준점 (°C)
 DEFAULT_STAGES = 4
 DEFAULT_AO_RATIO = 1.0      # A/O = 1:1
 
