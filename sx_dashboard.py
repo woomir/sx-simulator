@@ -34,7 +34,7 @@ from sx_simulator.multistage_sx import solve_multistage_countercurrent
 from sx_simulator.config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
                                   T_REF, MAX_LOADING_FRACTION)
 from sx_simulator.fitting import (
-    fit_sigmoid, sigmoid_model, extraction_to_D
+    fit_sigmoid, sigmoid_model
 )
 
 # =============================================================================
