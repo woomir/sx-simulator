@@ -172,10 +172,43 @@ EXTRACTANT_PARAMS = {
 # D2EHPA:      Mn > Co > Ni >> Li
 
 # =============================================================================
+# ESI 모델 파라미터 (Lu et al., 2024)
+# =============================================================================
+# ESI (Equilibrium Status Iteration) 모델:
+#   log(D_M) = log(C_M) + a_M · log([NaL]_org)
+# 여기서:
+#   D_M    = 금속 M의 분배 계수
+#   C_M    = 추출 상수 (extraction constant)
+#   a_M    = 화학양론 비 (stoichiometric ratio)
+#   [NaL]  = 유기상 사포닌화 추출제 농도 (mol/L)
+#
+# K'a = interface dissociation constant (Cyanex 272: 7.674e-8 mol/L)
+#   pH = -log(K'a) - log([HL]/[NaL])
+#   → [NaL]/[HL] = K'a / [H+] = K'a × 10^pH
+#
+# 참고: Lu et al., SPT 335 (2024) 126181, Table 2
+# 주의: NaCl 시스템에서 검증됨. Sulfate 시스템은 재피팅 필요.
+
+ESI_PARAMS = {
+    "Cyanex 272": {
+        "K_a": 7.674e-8,    # interface dissociation constant (mol/L)
+        "metals": {
+            "Li": {"a": 0.73, "log_C": 0.13},
+            "Ni": {"a": 1.22, "log_C": 2.31},
+            "Co": {"a": 1.57, "log_C": 4.99},
+            "Mn": {"a": 1.61, "log_C": 4.95},
+        },
+    },
+    # D2EHPA ESI 파라미터는 아직 논문에서 확보되지 않음
+    # 시그모이드 모델만 사용 가능
+}
+
+# =============================================================================
 # 기본 시뮬레이션 설정
 # =============================================================================
 DEFAULT_METALS = ["Li", "Ni", "Co", "Mn"]
 DEFAULT_EXTRACTANT = "Cyanex 272"
+DEFAULT_MODEL_TYPE = "sigmoid"  # "sigmoid" 또는 "esi"
 DEFAULT_TEMPERATURE = 25.0  # °C (기준 온도, T_ref)
 T_REF = 25.0                # 온도 보정 기준점 (°C)
 DEFAULT_STAGES = 4

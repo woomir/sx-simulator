@@ -33,6 +33,7 @@ def solve_multistage_countercurrent(
     tolerance: float = None,
     max_iter: int = None,
     temperature: float = None,
+    model_type: str = "sigmoid",
 ) -> dict:
     """
     역류 다단 Mixer-Settler 시뮬레이션.
@@ -90,6 +91,7 @@ def solve_multistage_countercurrent(
                     extractant=extractant, C_ext=C_ext,
                     target_pH=t_pH, metals=metals,
                     temperature=temperature,
+                    model_type=model_type,
                 )
             else:
                 # 고정 NaOH 모드
@@ -100,6 +102,7 @@ def solve_multistage_countercurrent(
                     extractant=extractant, C_ext=C_ext,
                     C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
                     temperature=temperature,
+                    model_type=model_type,
                 )
 
             stage_results.append(result)
