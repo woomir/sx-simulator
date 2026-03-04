@@ -684,7 +684,10 @@ with tab2:
                 rf"(\text{{pH}} - {ph50_eff:.2f})\right)}}"
             )
 
-        with col_plot:
+            if use_competition:
+                st.markdown("**Phase 3: 금속 추출제 경합 보정 활성**")
+                st.latex(r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left(\frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right)^{n_{\text{ext}}}")
+                st.caption("유기상 잔여 액체 추출제량에 비례하여 높은 로딩(Loading) 시 추출 효율을 동적으로 감소시킵니다 (Vasilyev 모델).")
             # 해당 금속의 미니 Isotherm 차트
             pHs = [x * 0.1 for x in range(10, 101)]
             Es = [extraction_efficiency(pH, metal, extractant, C_ext, temperature) for pH in pHs]
@@ -773,6 +776,11 @@ with tab2:
     st.latex(
         r"\text{pH}_{\text{out}} = -\log_{10}\!\left([\text{H}^+]_{\text{out}}\right)"
     )
+
+    if use_speciation:
+        st.markdown("**Phase 3: 수계 금속 종분화(Speciation) 효과 활성**")
+        st.latex(r"[\text{H}^+]_{\text{hydrolysis}} \approx \sum_M K_{MOH} \cdot [\text{M}^{n+}] \cdot [\text{OH}^-]")
+        st.caption("고 pH 역외 접근 시 금속 수산화물 착물(MOH⁺ 등)이 생성되며 양성자를 방출(OH⁻ 소비)해 직접적인 완충제로 작용함을 수지에 추가 반영했습니다.")
 
     if pH_mode == "목표 pH (자동 NaOH)":
         st.info(f"**목표 pH 모드**: pH = {target_pH if not staged_pHs else staged_pHs} 를 유지하기 위해 필요한 NaOH를 자동 역산합니다.\n\n"
