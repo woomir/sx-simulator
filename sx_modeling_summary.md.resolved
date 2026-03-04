@@ -1,0 +1,60 @@
+# SX 시뮬레이션 모델링 및 수계 이온 분포 문헌 요약
+
+이 문서는 제공된 PDF 자료([ALTA-2024-LBR-Paper-OLI.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/ALTA-2024-LBR-Paper-OLI.pdf), [wang2002.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/wang2002.pdf), [wang2004.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/wang2004.pdf), [wang2006.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/wang2006.pdf))를 바탕으로, Li, Ni, Co, Mn 용매추출(Solvent Extraction, SX) 역학 및 혼합 용매 전해질(MSE) 모델링에 관해 정리한 내용입니다. 이 자료는 향후 피드 조건, NaOH 첨가, 용매 조건에 따른 추출률 및 후액 pH를 예측하는 Mixer-Settler 시뮬레이션을 구축하기 위한 수학적 기틀이 됩니다.
+
+## 1. 열역학적 프레임워크: 혼합-용매 전해질(MSE) 모델
+제공된 논문(Wang et al., 2002; 2004; 2006)에 상세히 기술된 MSE 모델은 다공정, 다성분 전해질 시스템의 화학적 결합 및 상평형을 설명하는 데 사용됩니다. 용액의 비이상성을 모델링하기 위해 잉여 깁스 자유 에너지($G^{ex}$)를 다음 세 가지 항의 합으로 나타냅니다:
+$$ \frac{G^{ex}}{RT} = \frac{G^{ex}_{LR}}{RT} + \frac{G^{ex}_{MR}}{RT} + \frac{G^{ex}_{SR}}{RT} $$
+
+*   **장거리 (Long-range, LR) 상호작용**: 이온 간의 정전기적 상호작용을 나타내며, Pitzer-Debye-Hückel 식을 사용합니다. 용어 중에는 용매의 유전율 및 밀도가 포함되어 용액 조성 변화에 따른 정전기적 효과를 반영합니다.
+*   **단거리 (Short-range, SR) 상호작용**: 분자 간 상호작용을 나타내며, UNIQUAC 모델을 사용하여 중성 분자 간의 인력을 계산합니다.
+*   **중거리 (Middle-range, MR) 상호작용**: LR 범위 밖의 이온-이온 및 이온-분자 상호작용을 설명하며, 이온 강도(Ionic strength)에 종속되는 제2 비리얼 계수(Second-virial-coefficient) 형태의 함수로 나타냅니다.
+
+MSE 모델은 화학종 규명(Speciation)을 위해 이온 쌍(ion pairs) 및 복합체(complexes) 형성의 화학 평형 방정식을 포함합니다. 계산 시 모든 화학종의 농도 단위는 **몰분율(mole fraction)**을 따르며, 순수 성분일 때를 1로 두는 **대칭형 기준 상태(symmetrical reference state)**를 사용하여 모든 상(Phase)에서 농도의 일관성을 유지합니다.
+
+## 2. 수계-유기계 액-액 상평형 (Liquid-Liquid Equilibrium, LLE)
+(Wang et al., 2006; ALTA 2024)에 따르면 SX 공정에서 금속 이온은 수계상(Aqueous phase)과 유기계상(Organic phase) 사이에 분배됩니다. 액-액 평형에 도달하면 각 성분 $i$의 화학 포텐셜($\mu$)은 두 상에서 동일하게 됩니다:
+$$ \mu_{i}^{A} = \mu_{i}^{O} $$
+
+전해질의 전기적 중성 조건에 따라 개별 이온들의 포텐셜 합산인 **중성 염(neutral salt)**의 상태로 LLE 기준을 설정합니다. 배위결합에 대한 분배는 다음 식을 만족시킵니다.
+$$ (\gamma_{\pm} x_{\pm})^{O} = (\gamma_{\pm} x_{\pm})^{A} $$
+*   여기서 $\gamma_{\pm}$은 MSE 활동도 모델에서의 평균 이온 활동도 계수(activity coefficient)이고, $x_{\pm}$는 몰분율입니다.
+*   수계상의 pH가 오르면 추출제(Extractant)의 양성자 해리(Deprotonation) 효과가 일어나 킬레이트 복합체의 유기계상 용해도가 급격히 상승합니다.
+
+## 3. 용매추출(Solvent Extraction) 성능 지표 (ALTA 2024)
+D2EHPA 또는 Cyanex 272와 같은 상용 추출제를 케로신(Kerosene) 등의 용매(Diluent)와 혼합하여 Ni, Co, Li 등을 추출할 때 사용하는 성능 지표 모델링 수식은 다음과 같습니다.
+
+*   **분배 계수 (Distribution coefficient, $D$)**:
+    $$ D_M = \frac{Concentration\ of\ M\ in\ L_{O}}{Concentration\ of\ M\ in\ L_{A}} $$
+*   **추출률 (Percent of metal extracted, $E$)**:
+    $$ E_M = \frac{N_{M,0} - N_M}{N_{M,0}} \times 100 $$
+    *($N_{M,0}$ : 수계상의 초기 금속 몰수, $N_M$ : 추출 후 수계상에 남아있는 금속 몰수)*
+*   **분리 계수 (Separation factor, $\alpha$)**:
+    $$ \alpha_{M1,M2} = \frac{D_{M1}}{D_{M2}} $$
+
+## 4. 커스텀 SX 시뮬레이션을 위한 데이터 아키텍처
+우리가 만들 Mixer-Settler SX 시뮬레이션의 입력-출력 구조를 구축하기 위해 논문에서 추출한 파라미터 요구사항입니다.
+
+### 4.1. 입력 변수 (Input Parameters)
+1.  **Feed (수계) 조건**:
+    *   Li, Ni, Co, Mn 의 초기 농도
+    *   초기 수계 pH 값
+    *   수계 유량 (Flow rate)
+2.  **pH 조절제 (NaOH) 조건**:
+    *   NaOH 유량 및 농도
+3.  **용매 (유기계) 조건**:
+    *   추출제 종류 (예: Cyanex 272, D2EHPA 등) 및 농도
+    *   상 개질제(Phase modifier, 예: TBP) 농도
+    *   용매 (Kerosene 등) 및 유기계 유량
+    *   A/O 부피비 (Aqueous/Organic volume ratio)
+    *   단수 (Number of stages), 분리 효율, 시스템 온도
+
+### 4.2. 출력 예상 값 (Output Predictions)
+1.  Li, Ni, Co, Mn 의 종별 추출률 (%)
+2.  수계 및 유기계 내 화학종 분포(Speciation balance)
+3.  **후액(Raffinate)의 최종 pH 값**: 수계상의 물질수지 및 해리 이온균형에 의해 역산.
+4.  필요한 NaOH 양 및 용매-피드 혼합비 변화에 따른 최적화 곡선 (pH isotherm).
+
+## 5. 시뮬레이션 구현을 위한 다음 단계 (Next Steps)
+논문에서 설명한 복잡한 MSE 열역학 계산 모델(활동도 계수, 표준 깁스 에너지 등)을 파이썬 코드로 간소화하거나 준-경험적(Semi-empirical) 분포 함수로 변환하는 작업이 필요합니다.
+우선적으로 각 금속(Li, Ni, Co, Mn)에 대해 주어진 pH 및 추출제 농도 변수에 따른 경험적 분포 곡선(Isotherm) 함수를 정의하는 근사화 모델을 구축한 후, 물질 수지(Mass balance)와 pH 추적을 통해 Mixer-Settler 스테이지별 시뮬레이터를 개발하는 것이 권장됩니다.
