@@ -215,9 +215,9 @@ C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn,
 # =============================================================================
 # 탭 구성
 # =============================================================================
-tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab9, tab7 = st.tabs([
-    "📊 시뮬레이션 결과", "📐 모델 수식", "📈 pH Isotherm", "📉 McCabe-Thiele",
-    "🔬 추출제 비교", "📋 상세 데이터", "📝 데이터 피팅", "📖 용어 해설", "📜 변경 이력"
+tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab9, tab10, tab7 = st.tabs([
+    "📊 시뮬레이션 결과", "📐 수식 및 메커니즘 알고리즘", "📈 pH Isotherm", "📉 McCabe-Thiele",
+    "🔬 추출제 비교", "📋 상세 데이터", "📝 데이터 피팅", "📖 용어 해설", "📚 파라미터 및 문헌", "📜 변경 이력"
 ])
 
 # =============================================================================
@@ -648,7 +648,7 @@ with tab5:
 # TAB 5 (tab5): 모델 수식 확인
 # =============================================================================
 with tab2:
-    st.subheader(f"📐 현재 모델 수식 ({extractant}, {C_ext}M, {temperature:.0f}°C)")
+    st.subheader(f"📐 시스템 수식 및 메커니즘 알고리즘 ({extractant}, {C_ext}M, {temperature:.0f}°C)")
     st.markdown("현재 사이드바에 설정된 파라미터 값이 적용된 수식입니다. "
                 "파라미터를 변경하면 수식도 실시간으로 업데이트됩니다.")
 
@@ -817,10 +817,40 @@ with tab2:
                 f"NaOH 필요량 = $[H^+]_{{in}} \\cdot Q_{{aq}} + \\Sigma(n_H \\cdot \\Delta C_M \\cdot Q_{{aq}}) - [H^+]_{{target}} \\cdot Q_{{aq}}$")
 
     # ---------------------------------------------------------------
-    # 5. 추출률 공식
+    # 5. 시스템 입력 보정 로직 (황산염)
     # ---------------------------------------------------------------
     st.markdown("---")
-    st.markdown("### 5️⃣ 성능 지표")
+    st.markdown("### 5️⃣ 시스템 입력 보정 로직 (황산염 농도 자동 연산)")
+    st.markdown("피드 용액에 포함된 양이온 금속들이 형태상 금속 황산염($M\\text{SO}_4$, 또는 $M_2(\\text{SO}_4)_3$)으로 투입된다고 가정하고 화학양론비에 따라 **초기 총 음이온 농도**를 연산합니다.")
+    st.latex(r"C_{\text{sulfate}} (\text{M}) = \sum_{M} \left( \frac{C_{M,\text{feed}}}{\text{MW}_M} \times \frac{\text{valency}_M}{2} \right)")
+    st.info(f"계산된 피드 용액 내 황산염 음이온($\\text{{SO}}_4^{{2-}}$) 농도: **{C_sulfate:.4f} M**")
+
+    # ---------------------------------------------------------------
+    # 6. 다단 교대 수렴 (McCabe-Thiele Simulator)
+    # ---------------------------------------------------------------
+    st.markdown("---")
+    st.markdown("### 6️⃣ 다단 연속 추출 순환 해법 (McCabe-Thiele Iterator)")
+    st.markdown("**교류 방식 (Counter-current) 반복 알고리즘:** 다단(Multi-stage) Mixer-Settler 시스템의 작동 원리에 따라 수계(Aqueous)는 $\\text{Stage } 1 \\rightarrow N$ 방향으로, 유기계(Organic)는 $\\text{Stage } N \\rightarrow 1$ 방향으로 엇갈리며 흐릅니다.")
+    st.markdown(f"시뮬레이터는 이 동적 흐름 모델에서 {n_stages}개의 각 Stage가 평형에 도달할 때까지 **교대 수렴(Alternating Convergence)** 반복 루프를 구동합니다. 이전 Stage와 다음 Stage에서 넘어오는 물질들을 교차 연산하여 물질수지가 모두 일치할 때까지 수십 차례 왕복 연산합니다.")
+    st.latex(r"C_{M,\text{org}}^{\text{stage } i} = f_{\text{eq}}\!\left( C_{M,\text{aq}}^{\text{stage } i}, \text{pH}_i \right)")
+    st.latex(r"Q_{\text{aq}} \cdot C_{M,\text{aq}}^{\text{stage } i} + Q_{\text{org}} \cdot C_{M,\text{org}}^{\text{stage } i} = Q_{\text{aq}} \cdot C_{M,\text{aq}}^{\text{stage } i-1} + Q_{\text{org}} \cdot C_{M,\text{org}}^{\text{stage } i+1}")
+    
+    # ---------------------------------------------------------------
+    # 7. 추출제 한계 (Phase 3)
+    # ---------------------------------------------------------------
+    if use_competition:
+        st.markdown("---")
+        st.markdown("### 7️⃣ 추출 농도 물리적 한계 (Phase 3: 경합 페널티)")
+        st.markdown("금속 로딩량이 치솟아 남은 자유 추출제($\\overline{\\text{HA}}$)가 모자랄 때, $D_M$ 지표가 급격하게 저하되도록 억제하는 고도화 수식입니다 (Vasilyev 모델 변형).")
+        st.latex(r"[\overline{\text{HA}}]_{\text{free}} = C_{\text{ext}} - \sum_{M} n_{\text{ext},M} \cdot C_{M,\text{org}}")
+        st.latex(r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left( \max\left(10^{-4}, \frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right) \right)^{n_{\text{ext}}}")
+        st.caption("고농도 피드 유입 시 모든 금속이 100% 추출되는 비현실적 결과를 방지하고 가용 유기제 내에서 실제적인 상호 조율점(Crowding Out)을 찾습니다.")
+
+    # ---------------------------------------------------------------
+    # 8. 추출률 공식
+    # ---------------------------------------------------------------
+    st.markdown("---")
+    st.markdown("### 8️⃣ 성능 지표")
     col_perf1, col_perf2 = st.columns(2)
     with col_perf1:
         st.markdown("**추출률 (Percent Extraction):**")
@@ -1089,6 +1119,51 @@ with tab9:
 | **피팅 (Fitting)** | 실험 데이터에 수학 모델을 맞추는(최적화하는) 과정 |
 | **MSE Framework** | Mixed-Solvent Electrolyte. 이 시뮬레이터가 기반으로 하는 열역학 프레임워크 이름 |
     """)
+
+# =============================================================================
+# TAB 10: 파라미터 및 문헌 확인
+# =============================================================================
+with tab10:
+    st.subheader("📚 시스템 파라미터 및 참고 문헌 (References)")
+    st.markdown("이 시뮬레이터에 적용된 열역학 모델 및 파라미터 값들의 출처와 세부 데이터베이스 표를 제공합니다.")
+    
+    # 1. 참고 문헌
+    st.markdown("### 📖 참고 문헌 (Literature References)")
+    st.markdown("""
+* **기본 프레임워크 설계 (MSE Thermodynamic, Component Balance)**:
+  * Wang et al. (2002). "A thermodynamic framework for predicting the phase behavior of aqueous and mixed-solvent extraction systems."
+  * ALTA 2024 Metallurgical Conference Materials (Mixer-Settler SX Simulation)
+* **종분화 (Speciation) 및 수화 이온 반응 상수 ($K_{MOH}$, $K_{MSO_4}$)**:
+  * Baes, C. F., & Mesmer, R. E. (1976). *The Hydrolysis of Cations*. Wiley.
+  * Smith, R. M., & Martell, A. E. (1976). *Critical Stability Constants*. Plenum Press.
+* **추출제 파라미터 ($\text{pH}_{50}$, $k$, $\alpha$, $E_{\max}$ 등)**:
+  * **Cyanex 272 / D2EHPA**:
+    * Mohapatra, M. et al. (2007). "Solvent extraction of heavy metals from aqueous solutions." *Hydrometallurgy*.
+    * Pereira, D. D. et al. (2014). "Separation of nickel and cobalt from sulfate leach liquor." *Minerals Engineering*.
+    * 내부 피팅 데이터 및 국내 배터리 재활용 센터 운전 기준 보정.
+    """)
+
+    # 2. 파라미터 데이터
+    st.markdown("---")
+    st.markdown("### 🔬 추출제 초기 파라미터 (Extractant Database)")
+    from sx_simulator.config import EXTRACTANT_PARAMS, SPECIATION_CONSTANTS
+    
+    t10_col1, t10_col2 = st.columns(2)
+    with t10_col1:
+        st.markdown("**Cyanex 272 기초 파라미터**")
+        df_cyanex = pd.DataFrame(EXTRACTANT_PARAMS["Cyanex 272"]).T
+        st.dataframe(df_cyanex, use_container_width=True)
+    with t10_col2:
+        st.markdown("**D2EHPA 기초 파라미터**")
+        df_d2ehpa = pd.DataFrame(EXTRACTANT_PARAMS["D2EHPA"]).T
+        st.dataframe(df_d2ehpa, use_container_width=True)
+    st.caption("위 값들은 `$T_{\\text{ref}} = 25^{\\circ}\\text{C}$`, 기준 농도 단위에서 도출된 이분법/시그모이드 파라미터의 초기 기준점이며, 시뮬레이션 환경에 맞춰 좌측 사이드바 설정대로 수동/동적 보정이 이루어집니다.")
+
+    st.markdown("---")
+    st.markdown("### 🔬 화학 종분화 반응 상수 (Speciation Constants)")
+    st.markdown("고-pH 환경에서 금속 수산화물($M\\text{OH}^+$, $M(\\text{OH})_2$) 생성 및 점유를 결정하는 $\\beta_1/K_w$ 또는 $K_{MOH}$, 그리고 황산염 결합 상수들입니다.")
+    df_spec = pd.DataFrame(SPECIATION_CONSTANTS).T
+    st.dataframe(df_spec, use_container_width=True)
 
 # =============================================================================
 # TAB 7: 변경 이력 (Changelog)
