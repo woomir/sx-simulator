@@ -89,7 +89,7 @@ EXTRACTANT_PARAMS = {
             "gamma": 0.008,
         },
         "Ni": {
-            "pH50": 5.8,       # Co보다 높은 pH에서 추출 (trimer)
+            "pH50": 6.3,       # Data Fitting: 현장 Isd 108 희석제 반영 (원래 5.8에서 상향)
             "k": 2.5,          # 상대적으로 완만한 전이
             "E_max": 99.0,
             "n_H": 2,          # Ni²⁺ → 2H⁺ 방출
@@ -223,7 +223,7 @@ EXTRACTANT_PARAMS = {
             "gamma": 0.004,
         },
         "Mg": {
-            "pH50": 4.5,       # pH 3.6에서 14.7% 추출
+            "pH50": 3.2,       # Data Fitting: 현장 데이터 기반 하향 (원래 4.5에서 하향)
             "k": 2.0,
             "E_max": 85.0,
             "n_H": 2,

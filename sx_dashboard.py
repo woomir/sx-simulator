@@ -11,7 +11,7 @@ import sys, os, math, copy
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
@@ -62,23 +62,67 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
+# 실증 데이터 프리셋 (v1.9.0)
+# =============================================================================
+PRESETS = {
+    "Data1 (CoSX-D9-data)": {"ext": "Cyanex 272", "C_ext": 0.6308, "pH": 6.10, "n_stages": 5, "T": 25.0, "feed_flow": 25.0, "naoh_flow": 11.0, "org_flow": 118.0, "input": {"Li": 5.283, "Ni": 33.894, "Co": 3.096, "Mn": 0.067, "Ca": 0.002, "Mg": 0.026, "Zn": 0.0}},
+    "Data2 (CoSX-D5-data)": {"ext": "Cyanex 272", "C_ext": 0.6308, "pH": 5.89, "n_stages": 5, "T": 25.0, "feed_flow": 25.0, "naoh_flow": 9.4, "org_flow": 118.0, "input": {"Li": 5.260, "Ni": 33.876, "Co": 3.053, "Mn": 0.071, "Ca": 0.001, "Mg": 0.030, "Zn": 0.0}},
+    "Data3 (CoSX-D2-data)": {"ext": "Cyanex 272", "C_ext": 0.6308, "pH": 7.00, "n_stages": 5, "T": 25.0, "feed_flow": 20.0, "naoh_flow": 9.4, "org_flow": 118.0, "input": {"Li": 5.852, "Ni": 28.476, "Co": 4.106, "Mn": 0.091, "Ca": 0.002, "Mg": 0.035, "Zn": 0.0}},
+    "Data4 (IMSX-D5-Data)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 4.00, "n_stages": 5, "T": 25.0, "feed_flow": 30.0, "naoh_flow": 4.2, "org_flow": 124.0, "input": {"Li": 9.767, "Ni": 28.889, "Co": 16.178, "Mn": 15.204, "Ca": 0.336, "Mg": 0.149, "Zn": 0.006}},
+    "Data5 (IMSX-D9-Data)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 4.20, "n_stages": 5, "T": 25.0, "feed_flow": 25.0, "naoh_flow": 3.2, "org_flow": 100.0, "input": {"Li": 0.013, "Ni": 71.000, "Co": 8.700, "Mn": 8.900, "Ca": 0.250, "Mg": 3.000, "Zn": 0.600}},
+    "Data6 (IMSX-D?)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 3.90, "n_stages": 5, "T": 25.0, "feed_flow": 30.0, "naoh_flow": 3.5, "org_flow": 100.0, "input": {"Li": 8.390, "Ni": 27.917, "Co": 15.400, "Mn": 12.883, "Ca": 0.413, "Mg": 0.129, "Zn": 0.012}}
+}
+
+def apply_preset():
+    sel = st.session_state.preset_sel
+    if sel == "사용자 직접 입력": return
+    d = PRESETS[sel]
+    # 희석 효과 반영하여 Feed 농도 입력 (BM Feed와 NaOH 수용액의 합산 유량 기준)
+    dilution = d['feed_flow'] / (d['feed_flow'] + d['naoh_flow'])
+    st.session_state.ui_C_Li = float(d['input']['Li'] * dilution)
+    st.session_state.ui_C_Ni = float(d['input']['Ni'] * dilution)
+    st.session_state.ui_C_Co = float(d['input']['Co'] * dilution)
+    st.session_state.ui_C_Mn = float(d['input']['Mn'] * dilution)
+    st.session_state.ui_C_Ca = float(d['input']['Ca'] * dilution)
+    st.session_state.ui_C_Mg = float(d['input']['Mg'] * dilution)
+    st.session_state.ui_C_Zn = float(d['input']['Zn'] * dilution)
+    
+    st.session_state.ui_Q_aq = float(d['feed_flow'] + d['naoh_flow'])
+    st.session_state.ui_Q_org = float(d['org_flow'])
+    st.session_state.ui_extractant = d['ext']
+    st.session_state.ui_C_ext = d['C_ext']
+    st.session_state.ui_target_pH = d['pH']
+    st.session_state.ui_n_stages = d['n_stages']
+    st.session_state.ui_temperature = d['T']
+    st.session_state.ui_pH_mode = "목표 pH (자동 NaOH)"
+
+# =============================================================================
 # 사이드바: 입력 파라미터
 # =============================================================================
 st.sidebar.title("⚗️ SX 시뮬레이터")
+
+st.sidebar.selectbox(
+    "🧪 현장 실험 Data 프리셋", 
+    ["사용자 직접 입력"] + list(PRESETS.keys()),
+    key="preset_sel",
+    on_change=apply_preset,
+    help="선택 시 실험 조건 값(희석된 초기 농도, 유량, 추출제, 단수, 목표 pH 등)이 즉시 동기화됩니다."
+)
+
 st.sidebar.markdown("---")
 
 # --- Feed 조건 ---
 st.sidebar.header("🚰 Feed (수계) 조건")
-C_Li = st.sidebar.number_input("Li 농도 (g/L)", 0.0, 50.0, 1.5, 0.1)
-C_Ni = st.sidebar.number_input("Ni 농도 (g/L)", 0.0, 150.0, 5.0, 0.5)
-C_Co = st.sidebar.number_input("Co 농도 (g/L)", 0.0, 150.0, 3.0, 0.5)
-C_Mn = st.sidebar.number_input("Mn 농도 (g/L)", 0.0, 150.0, 2.0, 0.5)
-C_Ca = st.sidebar.number_input("Ca 농도 (g/L)", 0.0, 50.0, 0.0, 0.1)
-C_Mg = st.sidebar.number_input("Mg 농도 (g/L)", 0.0, 50.0, 0.0, 0.1)
-C_Zn = st.sidebar.number_input("Zn 농도 (g/L)", 0.0, 50.0, 0.0, 0.1)
+C_Li = st.sidebar.number_input("Li 농도 (g/L)", 0.0, 50.0, 1.5, 0.1, key="ui_C_Li")
+C_Ni = st.sidebar.number_input("Ni 농도 (g/L)", 0.0, 150.0, 5.0, 0.5, key="ui_C_Ni")
+C_Co = st.sidebar.number_input("Co 농도 (g/L)", 0.0, 150.0, 3.0, 0.5, key="ui_C_Co")
+C_Mn = st.sidebar.number_input("Mn 농도 (g/L)", 0.0, 150.0, 2.0, 0.5, key="ui_C_Mn")
+C_Ca = st.sidebar.number_input("Ca 농도 (g/L)", 0.0, 50.0, 0.0, 0.1, key="ui_C_Ca")
+C_Mg = st.sidebar.number_input("Mg 농도 (g/L)", 0.0, 50.0, 0.0, 0.1, key="ui_C_Mg")
+C_Zn = st.sidebar.number_input("Zn 농도 (g/L)", 0.0, 50.0, 0.0, 0.1, key="ui_C_Zn")
 
 pH_feed = st.sidebar.number_input("Feed pH", 0.0, 14.0, 3.0, 0.1)
-Q_aq = st.sidebar.number_input("Feed 수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
+Q_aq = st.sidebar.number_input("Feed 수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0, key="ui_Q_aq")
 
 # 총 황산염 농도 — Feed 금속 황산염 조성으로부터 자동 계산
 # 2가 양이온(MSO4): C_M/MW_M, 1가 양이온(Li2SO4): C_Li/(2*MW_Li)
@@ -97,10 +141,10 @@ st.sidebar.markdown("---")
 
 # --- NaOH 조건 ---
 st.sidebar.header("🧪 pH 제어 (NaOH)")
-pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0)
+pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode")
 
 if pH_mode == "목표 pH (자동 NaOH)":
-    target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1)
+    target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
     use_staged_pH = st.sidebar.checkbox("Stage별 차등 pH", value=False)
 else:
     target_pH = None
@@ -111,14 +155,14 @@ st.sidebar.markdown("---")
 
 # --- 용매 조건 ---
 st.sidebar.header("🫗 유기계 (용매) 조건")
-extractant = st.sidebar.selectbox("추출제", ["Cyanex 272", "D2EHPA"])
-C_ext = st.sidebar.number_input("추출제 농도 (M)", 0.05, 5.0, 0.5, 0.05)
-Q_org = st.sidebar.number_input("유기계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
+extractant = st.sidebar.selectbox("추출제", ["Cyanex 272", "D2EHPA"], key="ui_extractant")
+C_ext = st.sidebar.number_input("추출제 농도 (M)", 0.05, 5.0, 0.5, 0.05, key="ui_C_ext")
+Q_org = st.sidebar.number_input("유기계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0, key="ui_Q_org")
 
 # --- 온도 설정 ---
 st.sidebar.markdown("---")
 st.sidebar.header("🌡️ 온도 설정")
-temperature = st.sidebar.slider("운전 온도 (°C)", 10.0, 60.0, 25.0, 1.0)
+temperature = st.sidebar.slider("운전 온도 (°C)", 10.0, 60.0, 25.0, 1.0, key="ui_temperature")
 if abs(temperature - T_REF) > 0.5:
     st.sidebar.info(f"온도 보정 활성: ΔT = {temperature - T_REF:+.0f}°C")
 
@@ -126,7 +170,7 @@ st.sidebar.markdown("---")
 
 # --- Stage 설정 ---
 st.sidebar.header("🔄 Mixer-Settler 설정")
-n_stages = st.sidebar.slider("Stage 수", 1, 10, 4)
+n_stages = st.sidebar.slider("Stage 수", 1, 10, 4, key="ui_n_stages")
 
 # Stage별 pH 입력 (차등 모드)
 staged_pHs = None
