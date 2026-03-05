@@ -88,6 +88,7 @@ def solve_multistage_countercurrent(
             stage_results = []
             C_aq_current = copy.deepcopy(C_aq_feed)
             pH_current = pH_feed
+            Q_aq_current = Q_aq  # 누적 수계 유량 (NaOH 투입에 따라 증가)
 
             for s in range(n_stages):
                 C_org_in = org_out[s + 1] if s < n_stages - 1 else copy.deepcopy(C_org_fresh)
@@ -97,7 +98,7 @@ def solve_multistage_countercurrent(
                 if t_pH is not None:
                     result = solve_single_stage(
                         C_aq_in=C_aq_current, C_org_in=C_org_in,
-                        pH_in=pH_current, Q_aq=Q_aq, Q_org=Q_org,
+                        pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
                         extractant=extractant, C_ext=C_ext,
                         target_pH=t_pH, metals=metals,
                         temperature=temperature,
@@ -109,7 +110,7 @@ def solve_multistage_countercurrent(
                     q_naoh = Q_NaOH_dist[stage_num - 1]
                     result = solve_single_stage(
                         C_aq_in=C_aq_current, C_org_in=C_org_in,
-                        pH_in=pH_current, Q_aq=Q_aq, Q_org=Q_org,
+                        pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
                         extractant=extractant, C_ext=C_ext,
                         C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
                         temperature=temperature,
@@ -117,6 +118,7 @@ def solve_multistage_countercurrent(
                         use_competition=use_competition,
                         use_speciation=use_speciation,
                     )
+                    Q_aq_current += q_naoh  # NaOH 유량 누적
 
                 stage_results.append(result)
 
@@ -144,13 +146,14 @@ def solve_multistage_countercurrent(
         stage_results = []
         C_aq_current = copy.deepcopy(C_aq_feed)
         pH_current = pH_feed
+        Q_aq_current = Q_aq
         for s in range(n_stages):
             C_org_in = org_out[s + 1] if s < n_stages - 1 else copy.deepcopy(C_org_fresh)
             t_pH = stage_target_pHs[s]
             if t_pH is not None:
                 result = solve_single_stage(
                     C_aq_in=C_aq_current, C_org_in=C_org_in,
-                    pH_in=pH_current, Q_aq=Q_aq, Q_org=Q_org,
+                    pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
                     extractant=extractant, C_ext=C_ext,
                     target_pH=t_pH, metals=metals,
                     temperature=temperature, C_sulfate=C_sulfate,
@@ -160,12 +163,13 @@ def solve_multistage_countercurrent(
                 q_naoh = Q_NaOH_dist[s]
                 result = solve_single_stage(
                     C_aq_in=C_aq_current, C_org_in=C_org_in,
-                    pH_in=pH_current, Q_aq=Q_aq, Q_org=Q_org,
+                    pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
                     extractant=extractant, C_ext=C_ext,
                     C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
                     temperature=temperature, C_sulfate=C_sulfate,
                     use_competition=use_competition, use_speciation=use_speciation,
                 )
+                Q_aq_current += q_naoh
             stage_results.append(result)
             C_aq_current = copy.deepcopy(result["C_aq_out"])
             pH_current = result["pH_out"]
