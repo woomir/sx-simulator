@@ -60,9 +60,8 @@ def solve_multistage_countercurrent(
     if target_pH_per_stage is not None:
         stage_target_pHs = target_pH_per_stage
     elif target_pH is not None:
-        # 단일 목표 pH만 주어졌을 때: 전체 Q_NaOH 최적화
-        stage_target_pHs = [None] * n_stages
-        use_bisection = True
+        # 단일 목표 pH → 모든 stage에 동일 pH 적용
+        stage_target_pHs = [target_pH] * n_stages
     else:
         stage_target_pHs = [None] * n_stages
 
