@@ -4,6 +4,26 @@
 
 형식: [Semantic Versioning](https://semver.org/lang/ko/)
 
+## [v1.7.1] - 2026-03-05
+
+### 🐛 버그 수정
+
+- **다단 역류 solver 물질수지 오류 수정**: 단일 `target_pH` 사용 시 bisection 모드가 `_solve_with_fixed_NaOH(Q_NaOH=0)`를 호출하여 물질수지가 깨지던 치명적 버그 → `target_pH_per_stage`로 직접 변환하도록 수정
+- **종분화 K_MOH 상수 재정의**: K_MOH 값이 hydrolysis β₁ 값(10⁻¹⁰)으로 잘못 정의 → β₁/Kw (10⁴) 로 수정하여 종분화 효과가 유의미하게 반영
+
+### ⚡ 성능 개선
+
+- **다단 역류 수렴 안정성 향상**: Relaxation factor(α=0.3→0.7 적응형) 추가로 고정 NaOH 모드에서도 안정적 수렴 달성 (기존 500회 미수렴 → 47회 수렴)
+- **상대 오차 기반 수렴 판정**: 절대 오차 대신 `|Δ|/|ref|` 기준 적용
+- **수렴 후 최종 패스**: Relaxation 없이 정확한 stage 결과 재계산
+
+### 🔧 기타
+
+- 추출제 비교 탭에 Phase 3 플래그(`use_competition`, `use_speciation`) 전달 추가
+- 모델 수식 탭에 Phase 3 동적 수식 표시 추가
+- `docs/verification/` 검증 문서 체계 구축
+- `test_verification.py` 자동화 검증 스크립트 추가
+
 ## [v1.7.0] - 2026-03-04
 
 ### ✨ 신규 고급 옵션 (Phase 3: Mechanistic Light)

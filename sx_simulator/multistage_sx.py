@@ -119,17 +119,56 @@ def solve_multistage_countercurrent(
                     )
 
                 stage_results.append(result)
-                org_out[s] = copy.deepcopy(result["C_org_out"])
+
+                # Relaxation mixing: org_new = α × calc + (1-α) × prev
+                alpha = 0.3 if iteration < 50 else 0.7
+                org_calc = result["C_org_out"]
+                org_relaxed = {}
+                for m in metals:
+                    org_relaxed[m] = alpha * org_calc[m] + (1.0 - alpha) * org_out_prev[s].get(m, 0.0)
+                org_out[s] = org_relaxed
+
                 C_aq_current = copy.deepcopy(result["C_aq_out"])
                 pH_current = result["pH_out"]
 
             max_diff = 0.0
             for s in range(n_stages):
                 for m in metals:
-                    max_diff = max(max_diff, abs(org_out[s][m] - org_out_prev[s][m]))
+                    ref_val = max(abs(org_out_prev[s].get(m, 0.0)), 1e-10)
+                    max_diff = max(max_diff, abs(org_out[s][m] - org_out_prev[s][m]) / ref_val)
             if max_diff < tolerance:
                 converged = True
                 break
+
+        # ── 수렴 후 최종 패스: relaxation 없이 정확한 stage 결과 계산 ──
+        stage_results = []
+        C_aq_current = copy.deepcopy(C_aq_feed)
+        pH_current = pH_feed
+        for s in range(n_stages):
+            C_org_in = org_out[s + 1] if s < n_stages - 1 else copy.deepcopy(C_org_fresh)
+            t_pH = stage_target_pHs[s]
+            if t_pH is not None:
+                result = solve_single_stage(
+                    C_aq_in=C_aq_current, C_org_in=C_org_in,
+                    pH_in=pH_current, Q_aq=Q_aq, Q_org=Q_org,
+                    extractant=extractant, C_ext=C_ext,
+                    target_pH=t_pH, metals=metals,
+                    temperature=temperature, C_sulfate=C_sulfate,
+                    use_competition=use_competition, use_speciation=use_speciation,
+                )
+            else:
+                q_naoh = Q_NaOH_dist[s]
+                result = solve_single_stage(
+                    C_aq_in=C_aq_current, C_org_in=C_org_in,
+                    pH_in=pH_current, Q_aq=Q_aq, Q_org=Q_org,
+                    extractant=extractant, C_ext=C_ext,
+                    C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
+                    temperature=temperature, C_sulfate=C_sulfate,
+                    use_competition=use_competition, use_speciation=use_speciation,
+                )
+            stage_results.append(result)
+            C_aq_current = copy.deepcopy(result["C_aq_out"])
+            pH_current = result["pH_out"]
 
         raffinate = stage_results[-1]["C_aq_out"]
         pH_profile = [r["pH_out"] for r in stage_results]

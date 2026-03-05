@@ -11,7 +11,7 @@ import sys, os, math, copy
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
@@ -519,6 +519,8 @@ with tab4:
             extractant=ext, C_ext=ext_conc, n_stages=n_stages,
             target_pH=compare_pH, metals=metals,
             temperature=temperature,
+            use_competition=use_competition,
+            use_speciation=use_speciation,
         )
         results_compare[ext] = r
 
