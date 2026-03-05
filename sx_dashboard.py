@@ -235,6 +235,25 @@ with st.spinner("시뮬레이션 계산 중..."):
 
     result = solve_multistage_countercurrent(**sim_kwargs)
 
+# 디버그 정보 (배포 환경 진단용)
+with st.expander("🔧 Solver 진단 정보 (Debug)", expanded=False):
+    st.json({
+        "sim_kwargs_keys": list(sim_kwargs.keys()),
+        "target_pH": sim_kwargs.get("target_pH"),
+        "target_pH_per_stage": sim_kwargs.get("target_pH_per_stage"),
+        "Q_NaOH": sim_kwargs.get("Q_NaOH"),
+        "C_NaOH": sim_kwargs.get("C_NaOH"),
+        "result_converged": result.get("converged"),
+        "result_iterations": result.get("iterations"),
+        "result_total_NaOH": result.get("total_NaOH_mol_hr"),
+        "result_NaOH_profile": result.get("NaOH_profile"),
+        "result_pH_profile": result.get("pH_profile"),
+        "result_overall_extraction": result.get("overall_extraction"),
+        "result_raffinate": result.get("raffinate"),
+        "result_loaded_organic": result.get("loaded_organic"),
+        "stage0_loading": result["stages"][0].get("loading_fraction") if result.get("stages") else None,
+    })
+
 # =============================================================================
 # TAB 1: 시뮬레이션 결과
 # =============================================================================
