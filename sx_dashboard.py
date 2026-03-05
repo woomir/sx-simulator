@@ -11,7 +11,7 @@ import sys, os, math, copy
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-APP_VERSION = "1.7.2"
+APP_VERSION = "1.8.0"
 
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
@@ -73,12 +73,25 @@ C_Li = st.sidebar.number_input("Li 농도 (g/L)", 0.0, 50.0, 1.5, 0.1)
 C_Ni = st.sidebar.number_input("Ni 농도 (g/L)", 0.0, 150.0, 5.0, 0.5)
 C_Co = st.sidebar.number_input("Co 농도 (g/L)", 0.0, 150.0, 3.0, 0.5)
 C_Mn = st.sidebar.number_input("Mn 농도 (g/L)", 0.0, 150.0, 2.0, 0.5)
+C_Ca = st.sidebar.number_input("Ca 농도 (g/L)", 0.0, 50.0, 0.0, 0.1)
+C_Mg = st.sidebar.number_input("Mg 농도 (g/L)", 0.0, 50.0, 0.0, 0.1)
+C_Zn = st.sidebar.number_input("Zn 농도 (g/L)", 0.0, 50.0, 0.0, 0.1)
 
 pH_feed = st.sidebar.number_input("Feed pH", 0.0, 14.0, 3.0, 0.1)
 Q_aq = st.sidebar.number_input("Feed 수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0)
 
-C_sulfate = st.sidebar.number_input("총 황산염 농도 (M)", 0.0, 5.0, 0.5, 0.1)
-st.sidebar.caption("👉 Buffer Capacity 계산용 (0=순수물)")
+# 총 황산염 농도 — Feed 금속 황산염 조성으로부터 자동 계산
+# 2가 양이온(MSO4): C_M/MW_M, 1가 양이온(Li2SO4): C_Li/(2*MW_Li)
+C_sulfate = (
+    C_Li / (2 * MOLAR_MASS["Li"])  # Li2SO4 → 2Li+ + SO4²⁻
+    + C_Ni / MOLAR_MASS["Ni"]
+    + C_Co / MOLAR_MASS["Co"]
+    + C_Mn / MOLAR_MASS["Mn"]
+    + C_Ca / MOLAR_MASS["Ca"]
+    + C_Mg / MOLAR_MASS["Mg"]
+    + C_Zn / MOLAR_MASS["Zn"]
+)
+st.sidebar.info(f"💎 계산된 SO₄²⁻: **{C_sulfate:.3f} M**")
 
 st.sidebar.markdown("---")
 
@@ -196,7 +209,8 @@ st.title("⚗️ Li/Ni/Co/Mn Mixer-Settler SX 시뮬레이터")
 st.caption("MSE Thermodynamic Framework 기반 (ALTA 2024 / Wang et al.)")
 
 metals = DEFAULT_METALS
-C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn}
+C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn,
+             "Ca": C_Ca, "Mg": C_Mg, "Zn": C_Zn}
 
 # =============================================================================
 # 탭 구성
@@ -241,16 +255,30 @@ with st.spinner("시뮬레이션 계산 중..."):
 with tab1:
     # --- 요약 메트릭 ---
     st.subheader("🎯 추출 결과 요약")
-    met_cols = st.columns(4)
-    colors = {"Li": "#ff6b6b", "Ni": "#4ecdc4", "Co": "#45b7d1", "Mn": "#f7b731"}
-    for i, metal in enumerate(metals):
+    colors = {
+        "Li": "#ff6b6b", "Ni": "#4ecdc4", "Co": "#45b7d1", "Mn": "#f7b731",
+        "Ca": "#a29bfe", "Mg": "#fd79a8", "Zn": "#6c5ce7",
+    }
+    # 7개 금속 카드: 상단 4개 + 하단 3개
+    met_cols_row1 = st.columns(4)
+    for i, metal in enumerate(metals[:4]):
         ext_pct = result["overall_extraction"][metal]
         raff = result["raffinate"][metal]
-        met_cols[i].metric(
+        met_cols_row1[i].metric(
             label=f"{metal} 추출률",
             value=f"{ext_pct:.1f}%",
             delta=f"후액: {raff:.3f} g/L",
         )
+    if len(metals) > 4:
+        met_cols_row2 = st.columns(4)
+        for i, metal in enumerate(metals[4:]):
+            ext_pct = result["overall_extraction"][metal]
+            raff = result["raffinate"][metal]
+            met_cols_row2[i].metric(
+                label=f"{metal} 추출률",
+                value=f"{ext_pct:.1f}%",
+                delta=f"후액: {raff:.3f} g/L",
+            )
 
     col_info1, col_info2, col_info3 = st.columns(3)
     with col_info1:
@@ -278,7 +306,7 @@ with tab1:
     })
 
     fig_ext = px.bar(ext_data, x="금속", y="추출률 (%)",
-                     color="금속", color_discrete_sequence=["#ff6b6b", "#4ecdc4", "#45b7d1", "#f7b731"],
+                     color="금속", color_discrete_sequence=[colors.get(m, "#636e72") for m in metals],
                      text="추출률 (%)")
     fig_ext.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
     fig_ext.update_layout(height=400, showlegend=False,
@@ -343,7 +371,7 @@ with tab1:
 
     df_conc = pd.DataFrame(conc_data)
     fig_conc = go.Figure()
-    color_list = ["#ff6b6b", "#4ecdc4", "#45b7d1", "#f7b731"]
+    color_list = [colors.get(m, "#636e72") for m in metals]
     for i, metal in enumerate(metals):
         fig_conc.add_trace(go.Scatter(
             x=df_conc["Stage"], y=df_conc[metal],

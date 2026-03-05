@@ -4,6 +4,24 @@
 
 형식: [Semantic Versioning](https://semver.org/lang/ko/)
 
+## [v1.8.0] - 2026-03-05
+
+### ✨ 새 기능
+
+- **Ca, Mg, Zn 금속 추가**: 시뮬레이션 대상 금속을 4개(Li/Ni/Co/Mn)에서 7개로 확장
+  - Cyanex 272 및 D2EHPA 양 추출제에 대한 pH₅₀, k, E_max 등 전체 파라미터 추가
+  - 종분화 상수(K_MOH, K_MSO₄) 추가 — Baes & Mesmer (1976), Smith & Martell (1976)
+  - 추출 우선순위(EXTRACTION_PRIORITY) 업데이트: Zn > Mn > Co > ... 순서 반영
+  - 온도 의존성 파라미터(beta, gamma) 포함
+- **총 황산염 농도(SO₄²⁻) 자동 계산**: Feed 금속 황산염 조성에서 자동 산출
+  - 수동 입력 위젯 제거, 계산된 값을 사이드바에 표시
+
+### 📊 UI 개선
+
+- 시뮬레이션 결과 카드: 4개 → 7개 금속 (상단 4 + 하단 3 레이아웃)
+- pH Isotherm: 7개 금속 라인 표시 (Ca, Mg, Zn 색상 추가)
+- 추출제 비교, 상세 데이터, McCabe-Thiele 등 모든 탭 7개 금속 지원
+
 ## [v1.7.2] - 2026-03-05
 
 ### 🐛 버그 수정
