@@ -11,8 +11,9 @@ import sys, os, math, copy
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-APP_VERSION = "1.9.0"
-
+# 버전 정보 명시 (문서 및 캐시 관리에 활용 가능)
+APP_VERSION = "2.0.0"
+LAST_UPDATED = "2026-03-06"
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
 try:
