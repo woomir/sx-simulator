@@ -335,14 +335,35 @@ def compute_competitive_extractions(
         if m not in ordered_metals:
             ordered_metals.append(m)
 
-    # 유기상에 이미 로딩된 추출제 소비량 계산
+    # 유기상에 이미 로딩된 금속 총 몰수 계산
+    total_M_org_in_mol = 0.0
+    for m in metals:
+        C_org_m = C_org_in.get(m, 0.0)
+        if C_org_m > 0:
+            total_M_org_in_mol += (C_org_m / MOLAR_MASS[m])
+            
+    # [v2.0 고로딩 다핵 착물 방어 알고리즘]
+    # 전체 금속 로딩률 기반으로 동적 n_eff_global 결정 (최대 60% 완화)
+    # 기본 n_ext = 2.0 가정 시 최대 적재량 = C_ext / 2.0
+    max_theoretical_M_mol = C_ext / 2.0
+    if max_theoretical_M_mol > 0:
+        loading_ratio = total_M_org_in_mol / max_theoretical_M_mol
+    else:
+        loading_ratio = 0.0
+        
+    loading_ratio_clamped = min(1.0, loading_ratio)
+    
+    # n_eff_multiplier: 1.0 (낮은 로딩) -> 0.35 (극한 로딩)
+    n_eff_multiplier = max(0.35, 1.0 - (loading_ratio_clamped ** 2))
+
     ext_consumed = 0.0
     for m in metals:
         C_org_m = C_org_in.get(m, 0.0)
         if C_org_m > 0:
             MW = MOLAR_MASS[m]
             n_ext = EXTRACTANT_PARAMS[extractant][m].get("n_ext", 2)
-            ext_consumed += n_ext * (C_org_m / MW)
+            n_eff = n_ext * n_eff_multiplier
+            ext_consumed += n_eff * (C_org_m / MW)
 
     HA_free = max(0.0, C_ext - ext_consumed)
 
@@ -354,6 +375,7 @@ def compute_competitive_extractions(
     for metal in ordered_metals:
         MW = MOLAR_MASS[metal]
         n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+        n_eff = n_ext * n_eff_multiplier
 
         # 시그모이드 기반 D
         D_sigmoid = distribution_coefficient(
@@ -363,8 +385,8 @@ def compute_competitive_extractions(
         # 잔여 추출제 비율로 보정
         if C_ext > 0 and HA_free > 0:
             ratio = HA_free / C_ext
-            # 비율을 n_ext 승으로 적용 (stoichiometry 반영)
-            competition_factor = ratio ** n_ext
+            ratio_eff = max(1e-4, ratio)
+            competition_factor = ratio_eff ** n_eff
             competition_factor = max(0.0, min(1.0, competition_factor))
         else:
             competition_factor = 0.0
@@ -397,7 +419,7 @@ def compute_competitive_extractions(
         # 이 금속이 유기상에서 순증가한 추출제 소비량 차감
         delta_org_mol = C_org_mol_out - C_org_in.get(metal, 0.0) / MW
         if delta_org_mol > 0:
-            HA_free = max(0.0, HA_free - n_ext * delta_org_mol)
+            HA_free = max(0.0, HA_free - n_eff * delta_org_mol)
 
     return {
         "C_aq_out": C_aq_out,

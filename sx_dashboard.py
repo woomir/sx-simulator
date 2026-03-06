@@ -205,12 +205,7 @@ if pH_mode == "고정 NaOH":
 
 st.sidebar.markdown("---")
 
-# --- 고급 옵션 (Phase 3) ---
-st.sidebar.header("⚙️ 고급 옵션 (Phase 3)")
-use_competition = st.sidebar.checkbox("추출제 경쟁 분배 활성", value=False, help="Vasilyev et al. (2019) 모델 기반: 수계 금속 이온 간의 공유 유기 추출제 풀 경쟁 방식을 모델에 반영하여 고로딩 조건 정합성을 개선합니다.")
-use_speciation = st.sidebar.checkbox("수계 종분화 효과 활성", value=False, help="금속 수산화물 착물(MOH⁺) 생성에 의한 추가적인 pH 완충 효과를 시뮬레이션에 반영합니다.")
-
-st.sidebar.markdown("---")
+# 고급 옵션 (Phase 3)은 성능 향상을 위해 기본 활성화 됨 (무조건 True)
 
 # --- 모델 파라미터 편집 ---
 st.sidebar.header("📐 모델 파라미터 편집")
@@ -275,8 +270,8 @@ with st.spinner("시뮬레이션 계산 중..."):
         n_stages=n_stages, metals=metals,
         temperature=temperature,
         C_sulfate=C_sulfate,
-        use_competition=use_competition,
-        use_speciation=use_speciation,
+        use_competition=True,
+        use_speciation=True,
     )
 
     if pH_mode == "목표 pH (자동 NaOH)":
@@ -1185,6 +1180,8 @@ with tab10:
     * Mohapatra, M. et al. (2007). "Solvent extraction of heavy metals from aqueous solutions." *Hydrometallurgy*.
     * Pereira, D. D. et al. (2014). "Separation of nickel and cobalt from sulfate leach liquor." *Minerals Engineering*.
     * 내부 피팅 데이터 및 국내 배터리 재활용 센터 운전 기준 보정.
+* **고로딩(High-Loading) 다핵 착물 형성에 따른 추출제 배위수 방어 (v2.0)**:
+  * D2EHPA 및 Cyanex 272가 고농도 금속 추출 환경(추출제 부족상태)에서 다핵 올리고머(Multi-nuclear oligomeric complexes)를 형성하여 유효 화학양론 결합수($n_{\text{ext}}$)가 감소(Shift)하는 메커니즘을 시그모이드 경쟁 곡선에 수학적으로 반영.
     """)
 
     # 2. 파라미터 데이터
