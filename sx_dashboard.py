@@ -586,8 +586,8 @@ with tab4:
             extractant=ext, C_ext=ext_conc, n_stages=n_stages,
             target_pH=compare_pH, metals=metals,
             temperature=temperature,
-            use_competition=use_competition,
-            use_speciation=use_speciation,
+            use_competition=True,
+            use_speciation=True,
         )
         results_compare[ext] = r
 
