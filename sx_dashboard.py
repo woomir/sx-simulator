@@ -141,8 +141,9 @@ st.sidebar.info(f"💎 계산된 SO₄²⁻: **{C_sulfate:.3f} M**")
 st.sidebar.markdown("---")
 
 # --- NaOH 조건 ---
+# --- NaOH 조건 ---
 st.sidebar.header("🧪 pH 제어 (NaOH)")
-pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode")
+pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode", help="'목표 pH' 모드를 적극 권장합니다. 시뮬레이터가 원하는 산도에 도달하기 위한 최적 알칼리 투입량을 역산합니다.")
 
 if pH_mode == "목표 pH (자동 NaOH)":
     target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
@@ -156,9 +157,9 @@ st.sidebar.markdown("---")
 
 # --- 용매 조건 ---
 st.sidebar.header("🫗 유기계 (용매) 조건")
-extractant = st.sidebar.selectbox("추출제", ["Cyanex 272", "D2EHPA"], key="ui_extractant")
-C_ext = st.sidebar.number_input("추출제 농도 (M)", 0.05, 5.0, 0.5, 0.05, key="ui_C_ext")
-Q_org = st.sidebar.number_input("유기계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0, key="ui_Q_org")
+extractant = st.sidebar.selectbox("추출제", ["Cyanex 272", "D2EHPA"], key="ui_extractant", help="Cyanex 272는 Co를 Ni보다 먼저 추출하고, D2EHPA는 불순물(Ca, Mg, Zn, Mn)을 주로 선추출합니다.")
+C_ext = st.sidebar.number_input("추출제 농도 (M)", 0.05, 5.0, 0.5, 0.05, key="ui_C_ext", help="사용할 용매의 실제 유효 농도입니다. 부족할 경우 추출 효율이 급감합니다.")
+Q_org = st.sidebar.number_input("유기계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0, key="ui_Q_org", help="유기상 투입 유량입니다. 수계 유량과 비례하여 O/A 비를 결정합니다.")
 
 # --- 온도 설정 ---
 st.sidebar.markdown("---")
@@ -171,7 +172,7 @@ st.sidebar.markdown("---")
 
 # --- Stage 설정 ---
 st.sidebar.header("🔄 Mixer-Settler 설정")
-n_stages = st.sidebar.slider("Stage 수", 1, 10, 4, key="ui_n_stages")
+n_stages = st.sidebar.slider("Stage 수", 1, 10, 4, key="ui_n_stages", help="실제 현장에 구성될 연속 추출 다단 반응조의 갯수입니다. 많을수록 추출 한계치에 수렴합니다.")
 
 # Stage별 pH 입력 (차등 모드)
 staged_pHs = None
@@ -255,10 +256,21 @@ C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn,
 # =============================================================================
 # 탭 구성
 # =============================================================================
-tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab9, tab10, tab11, tab7 = st.tabs([
-    "📊 시뮬레이션 결과", "📐 수식 및 메커니즘 알고리즘", "📈 pH Isotherm", "📉 McCabe-Thiele",
+tab0, tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab9, tab10, tab11, tab7 = st.tabs([
+    "📘 사용자 매뉴얼", "📊 시뮬레이션 결과", "📐 수식 및 메커니즘 알고리즘", "📈 pH Isotherm", "📉 McCabe-Thiele",
     "🔬 추출제 비교", "📋 상세 데이터", "📝 데이터 피팅", "📖 용어 해설", "📚 파라미터 및 문헌", "🧪 데이터 피팅 검증 이력", "📜 변경 이력"
 ])
+
+# =============================================================================
+# TAB 0: 사용자 매뉴얼
+# =============================================================================
+with tab0:
+    manual_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "user_manual.md")
+    try:
+        with open(manual_path, "r", encoding="utf-8") as f:
+            st.markdown(f.read())
+    except FileNotFoundError:
+        st.error(f"매뉴얼 파일을 찾을 수 없습니다: {manual_path}")
 
 # =============================================================================
 # 시뮬레이션 실행
