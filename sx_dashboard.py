@@ -1180,7 +1180,9 @@ with tab10:
     * Pereira, D. D. et al. (2014). "Separation of nickel and cobalt from sulfate leach liquor." *Minerals Engineering*.
     * 내부 피팅 데이터 및 국내 배터리 재활용 센터 운전 기준 보정.
 * **고로딩(High-Loading) 다핵 착물 형성에 따른 추출제 배위수 방어 (v2.0)**:
-  * D2EHPA 및 Cyanex 272가 고농도 금속 추출 환경(추출제 부족상태)에서 다핵 올리고머(Multi-nuclear oligomeric complexes)를 형성하여 유효 화학양론 결합수($n_{\text{ext}}$)가 감소(Shift)하는 메커니즘을 시그모이드 경쟁 곡선에 수학적으로 반영.
+  * D2EHPA 및 Cyanex 272가 고농도 금속 추출 환경(추출제 부족상태)에서 다핵 올리고머(Multi-nuclear oligomeric complexes)를 형성하여 유효 화학양론 결합수($n_{\text{eff}}$)가 감소(Shift)하는 메커니즘을 시그모이드 경쟁 곡선에 수학적으로 반영.
+  * Rydberg, J. et al. (2004). *Solvent Extraction Principles and Practice*. Marcel Dekker.
+  * Neuman, R. D., et al. (1990). "Formation of polynuclear complexes in acidic organophosphorus extraction systems".
     """)
 
     # 2. 파라미터 데이터
