@@ -753,10 +753,9 @@ with tab2:
                 rf"(\text{{pH}} - {ph50_eff:.2f})\right)}}"
             )
 
-            if use_competition:
-                st.markdown("**Phase 3: 금속 추출제 경합 보정 활성**")
-                st.latex(r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left(\frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right)^{n_{\text{ext}}}")
-                st.caption("유기상 잔여 액체 추출제량에 비례하여 높은 로딩(Loading) 시 추출 효율을 동적으로 감소시킵니다 (Vasilyev 모델).")
+            st.markdown("**Phase 3: 금속 추출제 경합 보정 (기본 활성)**")
+            st.latex(r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left(\frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right)^{n_{\text{eff}}}")
+            st.caption("유기상 잔여 액체 추출제량에 비례하여 높은 로딩(Loading) 시 다핵 착물 형성에 따른 추출 효율을 동적 감소시킵니다.")
             # 해당 금속의 미니 Isotherm 차트
             pHs = [x * 0.1 for x in range(10, 101)]
             Es = [extraction_efficiency(pH, metal, extractant, C_ext, temperature) for pH in pHs]
@@ -846,10 +845,9 @@ with tab2:
         r"\text{pH}_{\text{out}} = -\log_{10}\!\left([\text{H}^+]_{\text{out}}\right)"
     )
 
-    if use_speciation:
-        st.markdown("**Phase 3: 수계 금속 종분화(Speciation) 효과 활성**")
-        st.latex(r"[\text{H}^+]_{\text{hydrolysis}} \approx \sum_M K_{MOH} \cdot [\text{M}^{n+}] \cdot [\text{OH}^-]")
-        st.caption("고 pH 역외 접근 시 금속 수산화물 착물(MOH⁺ 등)이 생성되며 양성자를 방출(OH⁻ 소비)해 직접적인 완충제로 작용함을 수지에 추가 반영했습니다.")
+    st.markdown("**Phase 3: 수계 금속 종분화(Speciation) 효과 (기본 활성)**")
+    st.latex(r"[\text{H}^+]_{\text{hydrolysis}} \approx \sum_M K_{MOH} \cdot [\text{M}^{n+}] \cdot [\text{OH}^-]")
+    st.caption("고 pH 역외 접근 시 금속 수산화물 착물(MOH⁺ 등)이 생성되며 양성자를 방출(OH⁻ 소비)해 직접적인 완충제로 작용함을 수지에 기본 반영했습니다.")
 
     if pH_mode == "목표 pH (자동 NaOH)":
         st.info(f"**목표 pH 모드**: pH = {target_pH if not staged_pHs else staged_pHs} 를 유지하기 위해 필요한 NaOH를 자동 역산합니다.\n\n"
@@ -875,15 +873,15 @@ with tab2:
     st.latex(r"Q_{\text{aq}} \cdot C_{M,\text{aq}}^{\text{stage } i} + Q_{\text{org}} \cdot C_{M,\text{org}}^{\text{stage } i} = Q_{\text{aq}} \cdot C_{M,\text{aq}}^{\text{stage } i-1} + Q_{\text{org}} \cdot C_{M,\text{org}}^{\text{stage } i+1}")
     
     # ---------------------------------------------------------------
+    # ---------------------------------------------------------------
     # 7. 추출제 한계 (Phase 3)
     # ---------------------------------------------------------------
-    if use_competition:
-        st.markdown("---")
-        st.markdown("### 7️⃣ 추출 농도 물리적 한계 (Phase 3: 경합 페널티)")
-        st.markdown("금속 로딩량이 치솟아 남은 자유 추출제($\\overline{\\text{HA}}$)가 모자랄 때, $D_M$ 지표가 급격하게 저하되도록 억제하는 고도화 수식입니다 (Vasilyev 모델 변형).")
-        st.latex(r"[\overline{\text{HA}}]_{\text{free}} = C_{\text{ext}} - \sum_{M} n_{\text{ext},M} \cdot C_{M,\text{org}}")
-        st.latex(r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left( \max\left(10^{-4}, \frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right) \right)^{n_{\text{ext}}}")
-        st.caption("고농도 피드 유입 시 모든 금속이 100% 추출되는 비현실적 결과를 방지하고 가용 유기제 내에서 실제적인 상호 조율점(Crowding Out)을 찾습니다.")
+    st.markdown("---")
+    st.markdown("### 7️⃣ 추출 농도 물리적 한계 (Phase 3: 다핵 착물 모델)")
+    st.markdown("금속 로딩량이 치솟아 남은 자유 추출제($\\overline{\\text{HA}}$)가 모자랄 때, $D_M$ 지표가 급격하게 저하되도록 억제하는 고도화 수식입니다. (v2.0 다핵 착물 $n_{\\text{eff}}$ 완화 적용)")
+    st.latex(r"[\overline{\text{HA}}]_{\text{free}} = C_{\text{ext}} - \sum_{M} n_{\text{eff},M} \cdot C_{M,\text{org}}")
+    st.latex(r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left( \max\left(10^{-4}, \frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right) \right)^{n_{\text{eff}}}")
+    st.caption("고농도 피드 유입 시 모든 금속이 100% 추출되는 비현실적 결과를 방지하고 가용 유기제 내에서 실제적인 상호 조율점(Crowding Out)을 찾습니다.")
 
     # ---------------------------------------------------------------
     # 8. 추출률 공식
@@ -1168,7 +1166,7 @@ with tab10:
     
     # 1. 참고 문헌
     st.markdown("### 📖 참고 문헌 (Literature References)")
-    st.markdown("""
+    st.markdown(r"""
 * **기본 프레임워크 설계 (MSE Thermodynamic, Component Balance)**:
   * Wang et al. (2002). "A thermodynamic framework for predicting the phase behavior of aqueous and mixed-solvent extraction systems."
   * ALTA 2024 Metallurgical Conference Materials (Mixer-Settler SX Simulation)
