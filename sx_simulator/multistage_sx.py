@@ -56,7 +56,6 @@ def solve_multistage_countercurrent(
         C_org_fresh = {m: 0.0 for m in metals}
 
     # 목표 pH 결정
-    use_bisection = False
     if target_pH_per_stage is not None:
         stage_target_pHs = target_pH_per_stage
     elif target_pH is not None:
@@ -123,7 +122,14 @@ def solve_multistage_countercurrent(
                 stage_results.append(result)
 
                 # Relaxation mixing: org_new = α × calc + (1-α) × prev
-                alpha = 0.3 if iteration < 50 else 0.7
+                if iteration < 30:
+                    alpha = 0.2
+                elif iteration < 100:
+                    alpha = 0.5
+                elif iteration < 300:
+                    alpha = 0.7
+                else:
+                    alpha = 0.9
                 org_calc = result["C_org_out"]
                 org_relaxed = {}
                 for m in metals:
@@ -194,39 +200,7 @@ def solve_multistage_countercurrent(
             "total_NaOH_mol_hr": sum(r.get("NaOH_consumed_mol_hr", 0) for r in stage_results),
         }
 
-    if not use_bisection:
-        return _run_with_q_naoh(Q_NaOH)
-
-    # Bisection search to find Q_NaOH that results in target_pH
-    low_q = 0.0
-    high_q = float(Q_aq * 2.0) # Start with a reasonable upper bound
-    
-    res_low = _run_with_q_naoh(low_q)
-    if res_low["pH_profile"][-1] >= target_pH:
-        return res_low
-        
-    res_high = _run_with_q_naoh(high_q)
-    for _ in range(5):
-        if res_high["pH_profile"][-1] >= target_pH:
-            break
-        high_q *= 2.0
-        res_high = _run_with_q_naoh(high_q)
-        
-    best_res = res_high
-    for _ in range(30):
-        mid_q = (low_q + high_q) / 2.0
-        best_res = _run_with_q_naoh(mid_q)
-        mid_ph = best_res["pH_profile"][-1]
-        
-        if abs(mid_ph - target_pH) < 0.005:
-            break
-            
-        if mid_ph < target_pH:
-            low_q = mid_q
-        else:
-            high_q = mid_q
-            
-    return best_res
+    return _run_with_q_naoh(Q_NaOH)
 
 
 def print_multistage_result(result: dict, C_aq_feed: dict = None):

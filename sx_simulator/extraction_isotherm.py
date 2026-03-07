@@ -109,6 +109,10 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     float
         추출률 (0 ~ E_max, %)
     """
+    if extractant not in EXTRACTANT_PARAMS:
+        raise ValueError(f"지원하지 않는 추출제: {extractant}")
+    if metal not in EXTRACTANT_PARAMS[extractant]:
+        raise ValueError(f"지원하지 않는 금속: {metal} (추출제: {extractant})")
     params = EXTRACTANT_PARAMS[extractant][metal]
     E_max = params["E_max"]
 
@@ -128,12 +132,15 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
 
 
 def distribution_coefficient(pH: float, metal: str, extractant: str,
-                              C_ext: float, ao_ratio: float = 1.0,
+                              C_ext: float,
                               temperature: float = None) -> float:
     """
     분배 계수 D를 계산합니다.
 
-    D = C_org / C_aq = E / (100 - E)  (순수 열역학적 D)
+    시그모이드 모델 내부의 pseudo-D로, 물질수지 식
+    C_aq_out = total_flow / (Q_aq + D * Q_org) 과 쌍으로 사용됩니다.
+
+    D = E / (100 - E)
 
     Parameters
     ----------
@@ -141,7 +148,6 @@ def distribution_coefficient(pH: float, metal: str, extractant: str,
     metal : str
     extractant : str
     C_ext : float
-    ao_ratio : float
     temperature : float, optional
 
     Returns
@@ -344,8 +350,19 @@ def compute_competitive_extractions(
             
     # [v2.0 고로딩 다핵 착물 방어 알고리즘]
     # 전체 금속 로딩률 기반으로 동적 n_eff_global 결정 (최대 60% 완화)
-    # 기본 n_ext = 2.0 가정 시 최대 적재량 = C_ext / 2.0
-    max_theoretical_M_mol = C_ext / 2.0
+    # 유기상 금속 구성 기반 가중 평균 n_ext로 최대 적재량 계산
+    if total_M_org_in_mol > 0:
+        weighted_n_ext = 0.0
+        for m in metals:
+            C_org_m = C_org_in.get(m, 0.0)
+            if C_org_m > 0:
+                mol_m = C_org_m / MOLAR_MASS[m]
+                n_ext_m = EXTRACTANT_PARAMS[extractant][m].get("n_ext", 2)
+                weighted_n_ext += n_ext_m * (mol_m / total_M_org_in_mol)
+        weighted_n_ext = max(weighted_n_ext, 1.0)
+    else:
+        weighted_n_ext = 2.0
+    max_theoretical_M_mol = C_ext / weighted_n_ext
     if max_theoretical_M_mol > 0:
         loading_ratio = total_M_org_in_mol / max_theoretical_M_mol
     else:

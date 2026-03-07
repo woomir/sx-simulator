@@ -131,6 +131,13 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
     목표 pH 모드: 지정된 pH에서 평형을 계산하고, 필요한 NaOH를 역산합니다.
     - use_competition ON: compute_competitive_extractions 1회 호출
     - use_competition OFF: 기존 sigmoid 감쇠 기반 반복 계산
+
+    주의사항 (구조적 한계):
+    - NaOH 역산 구조상 NaOH 유량을 사전에 알 수 없으므로, Q_aq_eff = Q_aq으로
+      계산합니다. NaOH 투입에 의한 수계 희석 효과는 반영되지 않습니다.
+    - pH > 7 OH- 보정에서도 동일한 이유로 Q_aq를 사용합니다.
+    - 정밀한 희석 반영이 필요한 경우 고정 NaOH 모드(_solve_with_fixed_NaOH)를
+      사용하십시오.
     """
     total_H_released = 0.0
 
@@ -268,10 +275,30 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                 n_H = get_proton_release(metal, extractant)
                 total_H_released += n_H * max(0.0, metal_extracted)
         else:
-            loading_frac = calc_loading_fraction(
-                C_org_out if C_org_out else C_org_in, extractant, C_ext, metals)
-            damping = loading_damping_factor(loading_frac)
+            # 로딩 감쇠 내부 반복 (target_pH 모드와 동일한 패턴)
+            damping = 1.0
+            for _load_iter in range(15):
+                C_org_out_tmp = {}
+                for metal in metals:
+                    D_raw = distribution_coefficient(
+                        pH_current, metal, extractant, C_ext, temperature=temperature)
+                    D = D_raw * damping
+                    MW = MOLAR_MASS[metal]
+                    C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
+                    C_org_mol_in = C_org_in.get(metal, 0.0) / MW
+                    total_metal_flow = C_aq_mol_in * Q_aq + C_org_mol_in * Q_org
+                    denominator = Q_aq_eff + D * Q_org
+                    C_aq_mol_out = total_metal_flow / denominator if denominator > 0 else 0.0
+                    C_org_mol_out = D * C_aq_mol_out
+                    C_org_out_tmp[metal] = C_org_mol_out * MW
+                new_loading = calc_loading_fraction(C_org_out_tmp, extractant, C_ext, metals)
+                new_damping = loading_damping_factor(new_loading)
+                if abs(new_damping - damping) < 1e-4:
+                    damping = new_damping
+                    break
+                damping = 0.5 * new_damping + 0.5 * damping
 
+            # 확정된 damping으로 최종 계산
             for metal in metals:
                 D_raw = distribution_coefficient(
                     pH_current, metal, extractant, C_ext, temperature=temperature)

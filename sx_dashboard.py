@@ -12,8 +12,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 버전 정보 명시 (문서 및 캐시 관리에 활용 가능)
-APP_VERSION = "2.0.0"
-LAST_UPDATED = "2026-03-06"
+APP_VERSION = "2.1.0"
+LAST_UPDATED = "2026-03-07"
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
 try:
@@ -230,7 +230,9 @@ if edit_params:
             p["beta"] = st.number_input(f"β 온도계수 ({metal})", -0.2, 0.1, float(p.get("beta", 0.0)), 0.005, key=f"beta_{metal}", format="%.3f")
             p["gamma"] = st.number_input(f"γ k-온도계수 ({metal})", -0.05, 0.05, float(p.get("gamma", 0.0)), 0.001, key=f"gamma_{metal}", format="%.3f")
 
-    # 파라미터를 전역에 반영
+    # 파라미터를 전역에 반영 (모듈 레벨 변수 직접 수정)
+    # Note: Streamlit은 각 세션이 독립 프로세스이므로 세션 간 오염 없음.
+    #       파라미터 복원이 필요하면 아래 '기본값으로 초기화' 버튼 사용.
     for ext_name in st.session_state.custom_params:
         for metal in st.session_state.custom_params[ext_name]:
             for k, v in st.session_state.custom_params[ext_name][metal].items():
@@ -592,13 +594,14 @@ with tab4:
 
     results_compare = {}
     for ext in ["Cyanex 272", "D2EHPA"]:
-        ext_conc = 0.5 if ext == "Cyanex 272" else 0.64
+        ext_conc = C_ext
         r = solve_multistage_countercurrent(
             C_aq_feed=C_aq_feed, pH_feed=pH_feed,
             Q_aq=Q_aq, Q_org=Q_org,
             extractant=ext, C_ext=ext_conc, n_stages=n_stages,
             target_pH=compare_pH, metals=metals,
             temperature=temperature,
+            C_sulfate=C_sulfate,
             use_competition=True,
             use_speciation=True,
         )
@@ -914,8 +917,13 @@ with tab2:
             D_vals = {m: distribution_coefficient(target_pH, m, extractant, C_ext, temperature=temperature) for m in metals}
             for i, m1 in enumerate(metals):
                 for m2 in metals[i+1:]:
-                    alpha = D_vals[m1] / D_vals[m2] if D_vals[m2] > 0 else float('inf')
-                    sep_data.append({"M₁/M₂": f"{m1}/{m2}", "α": f"{alpha:.2f}"})
+                    if D_vals[m1] <= 1e-10 and D_vals[m2] <= 1e-10:
+                        alpha_str = "N/A"
+                    elif D_vals[m2] <= 1e-10:
+                        alpha_str = "> 10⁶"
+                    else:
+                        alpha_str = f"{D_vals[m1] / D_vals[m2]:.2f}"
+                    sep_data.append({"M₁/M₂": f"{m1}/{m2}", "α": alpha_str})
             st.dataframe(pd.DataFrame(sep_data), use_container_width=True, hide_index=True)
 
     # ---------------------------------------------------------------
@@ -1014,10 +1022,10 @@ with tab6:
 
                         st.markdown(f"##### 🔹 {metal_name}")
 
-                        result = fit_sigmoid(pH_vals, E_vals)
+                        fit_result = fit_sigmoid(pH_vals, E_vals)
 
-                        if not result["success"]:
-                            st.error(f"피팅 실패: {result.get('error', 'Unknown error')}")
+                        if not fit_result["success"]:
+                            st.error(f"피팅 실패: {fit_result.get('error', 'Unknown error')}")
                             continue
 
                         # --- 피팅 결과 표시 ---
@@ -1025,8 +1033,8 @@ with tab6:
 
                         with res_col1:
                             st.markdown("**피팅 파라미터:**")
-                            params = result["params"]
-                            errors = result["errors"]
+                            params = fit_result["params"]
+                            errors = fit_result["errors"]
 
                             param_df = pd.DataFrame([
                                 {"파라미터": "pH\u2085\u2080", "값": params["pH50"],
@@ -1037,7 +1045,7 @@ with tab6:
                                  "±95%CI": errors["E_max_err"]},
                             ])
                             st.dataframe(param_df, use_container_width=True, hide_index=True)
-                            st.metric("R\u00b2", f"{result['r_squared']:.4f}")
+                            st.metric("R\u00b2", f"{fit_result['r_squared']:.4f}")
 
                         with res_col2:
                             # 피팅 곡선 차트
