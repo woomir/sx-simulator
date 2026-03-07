@@ -34,6 +34,7 @@ SX Simulator Configuration
   - Vasilyev et al. (2019) — stoichiometry 참고
 """
 
+import copy
 import math
 
 # =============================================================================
@@ -237,6 +238,40 @@ EXTRACTANT_PARAMS = {
 }
 
 # =============================================================================
+# 모델 보정 프로필
+# =============================================================================
+# 현재 EXTRACTANT_PARAMS는 현장 보정(Isd 108) 값이 반영된 상태입니다.
+# 문헌 기본값으로 되돌려 비교하고 싶을 때를 위해 프로필 생성 함수를 제공합니다.
+FIELD_CALIBRATED_PARAMS = copy.deepcopy(EXTRACTANT_PARAMS)
+
+LITERATURE_PROFILE_OVERRIDES = {
+    ("Cyanex 272", "Ni"): {"pH50": 5.8},
+    ("D2EHPA", "Mg"): {"pH50": 4.5},
+}
+
+
+def get_parameter_profile(profile_name: str = "field_calibrated") -> dict:
+    """
+    시뮬레이터 파라미터 프로필의 깊은 복사본을 반환합니다.
+
+    Parameters
+    ----------
+    profile_name : str
+        - "field_calibrated": 현장 보정값 (기본값)
+        - "literature_default": 문헌 기본값으로 일부 pH50 복원
+    """
+    if profile_name == "field_calibrated":
+        return copy.deepcopy(FIELD_CALIBRATED_PARAMS)
+
+    if profile_name == "literature_default":
+        params = copy.deepcopy(FIELD_CALIBRATED_PARAMS)
+        for (extractant, metal), overrides in LITERATURE_PROFILE_OVERRIDES.items():
+            params[extractant][metal].update(overrides)
+        return params
+
+    raise ValueError(f"지원하지 않는 파라미터 프로필: {profile_name}")
+
+# =============================================================================
 # 추출 선택성 순서 (참고)
 # =============================================================================
 # Cyanex 272:  Zn > Mn > Co >> Ni > Ca ≈ Mg >> Li  (낮은 pH에서 높은 pH 순)
@@ -296,6 +331,17 @@ SPECIATION_CONSTANTS = {
     "Ca": {"K_MOH": 10**(1.43), "K_MSO4": 10**(0.36)},   # β₁/Kw: 10^(-12.57)/10^(-14) = 10^1.43
 }
 
-# Force Streamlit Cloud to reload this file
+# =============================================================================
+# 현장 검증 범위 (Data1~6 기준)
+# =============================================================================
+VALIDATED_FIELD_WINDOW = {
+    "pH": (3.9, 7.0),
+    "C_ext_m": (0.6053, 0.6308),
+    "temperature_c": 25.0,
+    "temperature_margin_c": 5.0,
+    "n_stages": 5,
+    "total_metals_warning_gL": 80.0,
+}
 
+# Force Streamlit Cloud to reload this file
 

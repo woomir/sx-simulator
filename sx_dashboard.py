@@ -12,7 +12,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 버전 정보 명시 (문서 및 캐시 관리에 활용 가능)
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 LAST_UPDATED = "2026-03-07"
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
@@ -33,7 +33,8 @@ from sx_simulator.extraction_isotherm import (
 )
 from sx_simulator.multistage_sx import solve_multistage_countercurrent
 from sx_simulator.config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
-                                  T_REF, MAX_LOADING_FRACTION)
+                                  T_REF, MAX_LOADING_FRACTION,
+                                  VALIDATED_FIELD_WINDOW, get_parameter_profile)
 from sx_simulator.fitting import (
     fit_sigmoid, sigmoid_model
 )
@@ -74,6 +75,138 @@ PRESETS = {
     "Data6 (IMSX-D?)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 3.90, "n_stages": 5, "T": 25.0, "feed_flow": 30.0, "naoh_flow": 3.5, "org_flow": 100.0, "input": {"Li": 8.390, "Ni": 27.917, "Co": 15.400, "Mn": 12.883, "Ca": 0.413, "Mg": 0.129, "Zn": 0.012}}
 }
 
+KNOWN_PRESET_NOTES = {
+    "Data5 (IMSX-D9-Data)": (
+        "Data5의 Li 후액 값은 입력 Li 농도보다 높아 물질수지상 일관되지 않습니다. "
+        "검증 리포트에서는 Li 지표를 제외해서 해석하는 편이 안전합니다."
+    ),
+}
+
+PROFILE_LABELS = {
+    "현장 보정 (Isd 108)": "field_calibrated",
+    "문헌 기본값": "literature_default",
+}
+
+
+def apply_params_to_global() -> None:
+    """세션 상태의 파라미터를 현재 엔진 전역 설정에 반영합니다."""
+    for ext_name in st.session_state.custom_params:
+        for metal in st.session_state.custom_params[ext_name]:
+            EXTRACTANT_PARAMS[ext_name][metal].update(
+                st.session_state.custom_params[ext_name][metal]
+            )
+
+
+def apply_profile() -> None:
+    """선택한 보정 프로필을 세션과 엔진에 반영합니다."""
+    profile_key = PROFILE_LABELS[st.session_state.ui_param_profile]
+    st.session_state.custom_params = get_parameter_profile(profile_key)
+    apply_params_to_global()
+
+
+def build_scope_assessment(profile_key: str, pH_mode: str, target_pH: float,
+                           final_pH: float, C_ext: float, temperature: float,
+                           n_stages: int, C_aq_feed: dict,
+                           loading_pct: float, total_naoh_mol_hr: float) -> dict:
+    """
+    현재 입력이 Data1~6 현장 검증 범위와 얼마나 겹치는지 평가합니다.
+
+    이는 절대적인 정오 판단이 아니라, 현재 조건의 "검증 커버리지"를
+    사용자에게 알려주기 위한 안내 지표입니다.
+    """
+    highlights = []
+    cautions = []
+    score = 0
+
+    eval_pH = target_pH if target_pH is not None else final_pH
+    total_feed_gL = sum(C_aq_feed.values())
+    pH_min, pH_max = VALIDATED_FIELD_WINDOW["pH"]
+    cext_min, cext_max = VALIDATED_FIELD_WINDOW["C_ext_m"]
+    temp_ref = VALIDATED_FIELD_WINDOW["temperature_c"]
+    temp_margin = VALIDATED_FIELD_WINDOW["temperature_margin_c"]
+    validated_stages = VALIDATED_FIELD_WINDOW["n_stages"]
+
+    if profile_key == "field_calibrated":
+        highlights.append("현재 프로필은 Isd 108 현장 보정값을 기준으로 합니다.")
+        score += 1
+    else:
+        cautions.append("현재 프로필은 문헌 기본값입니다. 현장 프리셋(Data1~6)과의 직접 정합도는 낮아질 수 있습니다.")
+
+    if pH_min <= eval_pH <= pH_max:
+        score += 1
+    else:
+        cautions.append(f"현재 운전 pH {eval_pH:.2f}는 현장 검증 범위({pH_min:.1f}~{pH_max:.1f}) 밖입니다.")
+
+    if cext_min <= C_ext <= cext_max:
+        score += 1
+    else:
+        cautions.append(f"현재 추출제 농도 {C_ext:.4f} M는 현장 검증 범위({cext_min:.4f}~{cext_max:.4f} M) 밖입니다.")
+
+    if abs(temperature - temp_ref) <= temp_margin:
+        score += 1
+    else:
+        cautions.append(f"현재 온도 {temperature:.0f}°C는 25°C 기반 검증 범위를 크게 벗어납니다.")
+
+    if n_stages == validated_stages:
+        score += 1
+    else:
+        cautions.append(f"현재 {n_stages}단 조건은 현장 검증 기준({validated_stages}단)과 다릅니다.")
+
+    if total_feed_gL > VALIDATED_FIELD_WINDOW["total_metals_warning_gL"]:
+        cautions.append(
+            f"총 금속 농도 {total_feed_gL:.1f} g/L는 고이온강도 구간입니다. 활동도/비이상성 미반영 영향이 커질 수 있습니다."
+        )
+
+    if loading_pct > 85.0:
+        cautions.append(
+            f"최대 로딩률 {loading_pct:.1f}%로 포화에 가깝습니다. 경쟁 추출 휴리스틱 민감도가 커지는 조건입니다."
+        )
+
+    if pH_mode == "목표 pH (자동 NaOH)" and eval_pH > 7.0:
+        cautions.append(
+            "목표 pH 모드는 NaOH 유량을 역산하므로 pH>7 영역에서 실제 희석 효과를 완전 반영하지 못합니다."
+        )
+
+    if total_naoh_mol_hr > max(25.0, 0.5 * sum(C_aq_feed.values())):
+        highlights.append("알칼리 수요가 큰 조건입니다. 실제 설비 적용 전에는 고정 NaOH 모드 또는 현장 시험으로 재확인하는 편이 안전합니다.")
+
+    if score >= 5 and not cautions:
+        level = "high"
+        title = "현장 검증 범위 안"
+    elif score >= 3:
+        level = "medium"
+        title = "부분 검증 범위"
+    else:
+        level = "low"
+        title = "검증 범위 밖"
+
+    return {
+        "level": level,
+        "title": title,
+        "highlights": highlights,
+        "cautions": cautions,
+    }
+
+
+def render_scope_assessment(container, assessment: dict) -> None:
+    """검증 커버리지 평가를 Streamlit 컨테이너에 렌더링합니다."""
+    if assessment["level"] == "high":
+        container.success("🧭 현장 검증 범위와 잘 겹치는 조건입니다. 내부 비교와 추세 해석에 유리합니다.")
+    elif assessment["level"] == "medium":
+        container.warning("🧭 일부만 현장 검증 범위와 겹칩니다. 방향성 해석은 가능하지만 정량값은 주의가 필요합니다.")
+    else:
+        container.error("🧭 현장 검증 범위를 벗어난 조건입니다. 정량 예측보다 경향 확인 용도로 해석하는 편이 안전합니다.")
+
+    if assessment["highlights"]:
+        container.markdown("**해석 포인트**")
+        for item in assessment["highlights"]:
+            container.markdown(f"- {item}")
+
+    if assessment["cautions"]:
+        container.markdown("**주의사항**")
+        for item in assessment["cautions"]:
+            container.markdown(f"- {item}")
+
 def apply_preset():
     sel = st.session_state.preset_sel
     if sel == "사용자 직접 입력": return
@@ -102,6 +235,14 @@ def apply_preset():
 # =============================================================================
 st.sidebar.title("⚗️ SX 시뮬레이터")
 
+if "ui_param_profile" not in st.session_state:
+    st.session_state.ui_param_profile = "현장 보정 (Isd 108)"
+if "custom_params" not in st.session_state:
+    st.session_state.custom_params = get_parameter_profile(
+        PROFILE_LABELS[st.session_state.ui_param_profile]
+    )
+    apply_params_to_global()
+
 st.sidebar.selectbox(
     "🧪 현장 실험 Data 프리셋", 
     ["사용자 직접 입력"] + list(PRESETS.keys()),
@@ -109,6 +250,24 @@ st.sidebar.selectbox(
     on_change=apply_preset,
     help="선택 시 실험 조건 값(희석된 초기 농도, 유량, 추출제, 단수, 목표 pH 등)이 즉시 동기화됩니다."
 )
+selected_preset_note = KNOWN_PRESET_NOTES.get(st.session_state.get("preset_sel"))
+if selected_preset_note:
+    st.sidebar.warning(selected_preset_note)
+
+st.sidebar.markdown("---")
+
+st.sidebar.header("🧭 모델 보정 프로필")
+st.sidebar.selectbox(
+    "보정 기준",
+    list(PROFILE_LABELS.keys()),
+    key="ui_param_profile",
+    on_change=apply_profile,
+    help="현장 보정 프로필은 Data1~6과 같은 현장 조건에 더 가깝고, 문헌 기본값은 범용 비교용 기준선입니다.",
+)
+if st.session_state.ui_param_profile == "현장 보정 (Isd 108)":
+    st.sidebar.info("현재 프로필은 Isd 108 현장 보정 파라미터를 사용합니다.")
+else:
+    st.sidebar.warning("현재 프로필은 문헌 기본값을 사용합니다. 현장 프리셋과의 직접 정합도는 낮아질 수 있습니다.")
 
 st.sidebar.markdown("---")
 
@@ -213,10 +372,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("📐 모델 파라미터 편집")
 edit_params = st.sidebar.checkbox("Isotherm 파라미터 수정", value=False)
 
-# 파라미터를 session_state에 저장
-if "custom_params" not in st.session_state:
-    st.session_state.custom_params = copy.deepcopy(EXTRACTANT_PARAMS)
-
 if edit_params:
     st.sidebar.markdown(f"**{extractant} 파라미터:**")
     for metal in DEFAULT_METALS:
@@ -230,20 +385,16 @@ if edit_params:
             p["beta"] = st.number_input(f"β 온도계수 ({metal})", -0.2, 0.1, float(p.get("beta", 0.0)), 0.005, key=f"beta_{metal}", format="%.3f")
             p["gamma"] = st.number_input(f"γ k-온도계수 ({metal})", -0.05, 0.05, float(p.get("gamma", 0.0)), 0.001, key=f"gamma_{metal}", format="%.3f")
 
-    # 파라미터를 전역에 반영 (모듈 레벨 변수 직접 수정)
-    # Note: Streamlit은 각 세션이 독립 프로세스이므로 세션 간 오염 없음.
-    #       파라미터 복원이 필요하면 아래 '기본값으로 초기화' 버튼 사용.
-    for ext_name in st.session_state.custom_params:
-        for metal in st.session_state.custom_params[ext_name]:
-            for k, v in st.session_state.custom_params[ext_name][metal].items():
-                EXTRACTANT_PARAMS[ext_name][metal][k] = v
-
-    if st.sidebar.button("🔄 기본값으로 초기화"):
-        from sx_simulator import config as _cfg
-        import importlib
-        importlib.reload(_cfg)
-        st.session_state.custom_params = copy.deepcopy(_cfg.EXTRACTANT_PARAMS)
+    if st.sidebar.button("🔄 선택 프로필로 초기화"):
+        st.session_state.custom_params = get_parameter_profile(
+            PROFILE_LABELS[st.session_state.ui_param_profile]
+        )
+        apply_params_to_global()
         st.rerun()
+
+# 파라미터를 전역에 반영 (모듈 레벨 변수 직접 수정)
+# Note: Streamlit은 각 세션이 독립 프로세스이므로 세션 간 오염은 제한적입니다.
+apply_params_to_global()
 
 # =============================================================================
 # 메인 영역
@@ -303,10 +454,38 @@ with st.spinner("시뮬레이션 계산 중..."):
 
     result = solve_multistage_countercurrent(**sim_kwargs)
 
+profile_key = PROFILE_LABELS[st.session_state.ui_param_profile]
+max_loading = max(sr.get('loading_fraction', 0.0) for sr in result['stages'])
+loading_pct = max_loading * 100.0
+scope_assessment = build_scope_assessment(
+    profile_key=profile_key,
+    pH_mode=pH_mode,
+    target_pH=target_pH,
+    final_pH=result["pH_profile"][-1],
+    C_ext=C_ext,
+    temperature=temperature,
+    n_stages=n_stages,
+    C_aq_feed=C_aq_feed,
+    loading_pct=loading_pct,
+    total_naoh_mol_hr=result["total_NaOH_mol_hr"],
+)
+
+st.sidebar.markdown("---")
+st.sidebar.header("📎 검증 커버리지")
+st.sidebar.caption(f"활성 프로필: {st.session_state.ui_param_profile}")
+if result["converged"]:
+    st.sidebar.success(f"계산 수렴: {result['iterations']} iter")
+else:
+    st.sidebar.error(f"계산 미수렴: {result['iterations']} iter")
+render_scope_assessment(st.sidebar, scope_assessment)
+
 # =============================================================================
 # TAB 1: 시뮬레이션 결과
 # =============================================================================
 with tab1:
+    if not result["converged"]:
+        st.error("현재 조건에서 다단 계산이 수렴하지 않았습니다. 결과 수치를 의사결정에 직접 사용하기 전에 입력 조건과 전략을 다시 확인하세요.")
+
     # --- 요약 메트릭 ---
     st.subheader("🎯 추출 결과 요약")
     colors = {
@@ -334,19 +513,28 @@ with tab1:
                 delta=f"후액: {raff:.3f} g/L",
             )
 
-    col_info1, col_info2, col_info3 = st.columns(3)
+    col_info1, col_info2, col_info3, col_info4 = st.columns(4)
     with col_info1:
         st.metric("후액 최종 pH", f"{result['pH_profile'][-1]:.2f}")
     with col_info2:
         st.metric("총 NaOH 소비", f"{result['total_NaOH_mol_hr']:.1f} mol/hr")
     with col_info3:
-        # Stage 1 (가장 높은 로딩) 로딩률 표시
-        max_loading = max(sr.get('loading_fraction', 0.0) for sr in result['stages'])
-        loading_pct = max_loading * 100
         if loading_pct > 85:
             st.metric("최대 로딩률", f"{loading_pct:.1f}%", delta="⚠️ 포화 근접", delta_color="inverse")
         else:
             st.metric("최대 로딩률", f"{loading_pct:.1f}%")
+    with col_info4:
+        if result["converged"]:
+            st.metric("수렴 상태", "수렴", delta=f"{result['iterations']} iter")
+        else:
+            st.metric("수렴 상태", "미수렴", delta=f"{result['iterations']} iter", delta_color="inverse")
+
+    st.markdown("---")
+    st.subheader("🧭 현재 시뮬레이션 해석 가이드")
+    st.caption(f"활성 프로필: **{st.session_state.ui_param_profile}**")
+    render_scope_assessment(st, scope_assessment)
+    if selected_preset_note:
+        st.warning(f"프리셋 주의: {selected_preset_note}")
 
     st.markdown("---")
 
@@ -591,6 +779,9 @@ with tab8:
 with tab4:
     st.subheader("🔬 Cyanex 272 vs D2EHPA 비교")
     compare_pH = st.slider("비교 목표 pH", 2.0, 8.0, 5.0, 0.1, key="compare_ph")
+    st.info(
+        f"비교 조건: 공통 C_ext {C_ext:.4f} M, {n_stages}단, {temperature:.0f}°C, SO₄²⁻ {C_sulfate:.3f} M"
+    )
 
     results_compare = {}
     for ext in ["Cyanex 272", "D2EHPA"]:
