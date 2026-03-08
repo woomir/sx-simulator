@@ -15,6 +15,110 @@ from .single_stage import solve_single_stage
 from .config import DEFAULT_METALS, CONVERGENCE_TOLERANCE, MAX_ITERATIONS
 
 
+def _clone_org_profile(org_profile: list, metals: list) -> list:
+    """유기상 stage profile을 금속 키 기준으로 안전하게 복사합니다."""
+    return [
+        {metal: stage.get(metal, 0.0) for metal in metals}
+        for stage in org_profile
+    ]
+
+
+def _build_naoh_distribution(
+    test_q_naoh: float,
+    n_stages: int,
+    naoh_weights: list = None,
+    naoh_strategy: str = "uniform",
+) -> list:
+    """다단 고정 NaOH 분배량을 계산합니다."""
+    if naoh_weights is not None and len(naoh_weights) == n_stages:
+        weights = naoh_weights
+    elif naoh_strategy == "front_loaded":
+        weights = [0.5 ** i for i in range(n_stages)]
+    else:
+        weights = [1.0] * n_stages
+
+    weight_sum = sum(weights)
+    if weight_sum <= 0:
+        return [0.0] * n_stages
+    return [test_q_naoh * (weight / weight_sum) for weight in weights]
+
+
+def _get_relaxation_alpha(
+    iteration: int,
+    last_max_diff: float = None,
+    target_mode: bool = False,
+    relaxation_scale: float = 1.0,
+) -> float:
+    """
+    외부 fixed-point 반복의 under-relaxation 계수를 반환합니다.
+
+    target pH 모드는 강한 비선형성을 보이므로 기본적으로 더 보수적인 damping을 사용합니다.
+    """
+    if target_mode:
+        if iteration < 40:
+            alpha = 0.10
+        elif iteration < 120:
+            alpha = 0.18
+        elif iteration < 250:
+            alpha = 0.28
+        else:
+            alpha = 0.40
+    else:
+        if iteration < 30:
+            alpha = 0.18
+        elif iteration < 100:
+            alpha = 0.30
+        elif iteration < 250:
+            alpha = 0.45
+        else:
+            alpha = 0.60
+
+    if last_max_diff is not None:
+        if last_max_diff > 10.0:
+            alpha = min(alpha, 0.05)
+        elif last_max_diff > 3.0:
+            alpha = min(alpha, 0.08)
+        elif last_max_diff > 1.0:
+            alpha = min(alpha, 0.12)
+        elif last_max_diff > 0.3:
+            alpha = min(alpha, 0.18)
+        elif last_max_diff < 0.03:
+            alpha = min(0.75, alpha * 1.15)
+
+    alpha *= relaxation_scale
+    return max(0.03, min(0.85, alpha))
+
+
+def _compute_max_relative_diff(
+    current_org_out: list,
+    previous_org_out: list,
+    metals: list,
+) -> float:
+    """유기상 프로파일 변화의 최대 상대차를 계산합니다."""
+    max_diff = 0.0
+    for stage_idx in range(len(current_org_out)):
+        for metal in metals:
+            ref_val = max(abs(previous_org_out[stage_idx].get(metal, 0.0)), 1e-10)
+            diff = abs(current_org_out[stage_idx][metal] - previous_org_out[stage_idx][metal]) / ref_val
+            if diff > max_diff:
+                max_diff = diff
+    return max_diff
+
+
+def _interpolate_stage_targets(stage_targets: list, pH_feed: float, level: float) -> list:
+    """
+    target pH fallback continuation용 stage target 보간값을 생성합니다.
+    level=1.0이면 원래 target과 동일합니다.
+    """
+    interpolated = []
+    for target in stage_targets:
+        if target is None:
+            interpolated.append(None)
+        else:
+            interpolated.append(pH_feed + level * (target - pH_feed))
+    return interpolated
+
+
 def solve_multistage_countercurrent(
     C_aq_feed: dict,
     pH_feed: float,
@@ -65,36 +169,133 @@ def solve_multistage_countercurrent(
     else:
         stage_target_pHs = [None] * n_stages
 
-    def _run_with_q_naoh(test_q_naoh: float) -> dict:
-        # NaOH 분배 (고정 NaOH 모드용)
-        if naoh_weights is not None and len(naoh_weights) == n_stages:
-            weights = naoh_weights
-        elif naoh_strategy == "front_loaded":
-            weights = [0.5 ** i for i in range(n_stages)]
-        else: # "uniform"
-            weights = [1.0] * n_stages
-            
-        w_sum = sum(weights)
-        if w_sum > 0:
-            Q_NaOH_dist = [test_q_naoh * (w / w_sum) for w in weights]
-        else:
-            Q_NaOH_dist = [0.0] * n_stages
+    def _run_exact_stage_pass(
+        org_profile_seed: list,
+        Q_NaOH_dist: list,
+        stage_targets: list,
+    ) -> list:
+        """주어진 유기상 seed를 사용해 relaxation 없는 stage 결과를 계산합니다."""
+        stage_results = []
+        C_aq_current = copy.deepcopy(C_aq_feed)
+        pH_current = pH_feed
+        Q_aq_current = Q_aq
+        C_sulfate_current = C_sulfate
 
-        org_out = [{m: 0.0 for m in metals} for _ in range(n_stages)]
+        for stage_idx in range(n_stages):
+            C_org_in = (
+                org_profile_seed[stage_idx + 1]
+                if stage_idx < n_stages - 1
+                else copy.deepcopy(C_org_fresh)
+            )
+            stage_target = stage_targets[stage_idx]
+            if stage_target is not None:
+                result = solve_single_stage(
+                    C_aq_in=C_aq_current, C_org_in=C_org_in,
+                    pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
+                    extractant=extractant, C_ext=C_ext,
+                    target_pH=stage_target, metals=metals,
+                    C_NaOH=C_NaOH,
+                    temperature=temperature, C_sulfate=C_sulfate_current,
+                    use_competition=use_competition, use_speciation=use_speciation,
+                    extractant_params=extractant_params,
+                )
+            else:
+                q_naoh = Q_NaOH_dist[stage_idx]
+                result = solve_single_stage(
+                    C_aq_in=C_aq_current, C_org_in=C_org_in,
+                    pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
+                    extractant=extractant, C_ext=C_ext,
+                    C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
+                    temperature=temperature, C_sulfate=C_sulfate_current,
+                    use_competition=use_competition, use_speciation=use_speciation,
+                    extractant_params=extractant_params,
+                )
+                Q_aq_current += q_naoh
+
+            stage_results.append(result)
+            C_aq_current = copy.deepcopy(result["C_aq_out"])
+            pH_current = result["pH_out"]
+            C_sulfate_current = result.get("C_sulfate_out_M", C_sulfate_current)
+            if stage_target is not None:
+                Q_aq_current = result.get("Q_aq_out_L_hr", Q_aq_current)
+
+        return stage_results
+
+    def _build_result_payload(
+        stage_results: list,
+        converged: bool,
+        iteration_count: int,
+        best_residual: float,
+        solver_strategy: str,
+    ) -> dict:
+        raffinate = stage_results[-1]["C_aq_out"]
+        pH_profile = [result["pH_out"] for result in stage_results]
+        overall_extraction = {}
+        for metal in metals:
+            C_feed = C_aq_feed.get(metal, 0.0)
+            C_raff = raffinate.get(metal, 0.0)
+            overall_extraction[metal] = (1.0 - C_raff / C_feed) * 100.0 if C_feed > 0 else 0.0
+
+        return {
+            "stages": stage_results,
+            "raffinate": raffinate,
+            "loaded_organic": stage_results[0]["C_org_out"],
+            "pH_profile": pH_profile,
+            "NaOH_profile": [result.get("NaOH_consumed_mol_hr", 0) for result in stage_results],
+            "NaOH_flow_profile": [result.get("Q_NaOH_estimated_L_hr", 0) for result in stage_results],
+            "overall_extraction": overall_extraction,
+            "converged": converged,
+            "iterations": iteration_count,
+            "best_residual": best_residual,
+            "solver_strategy": solver_strategy,
+            "total_NaOH_mol_hr": sum(result.get("NaOH_consumed_mol_hr", 0) for result in stage_results),
+        }
+
+    def _run_with_q_naoh(
+        test_q_naoh: float,
+        stage_targets: list = None,
+        initial_org_out: list = None,
+        relaxation_scale: float = 1.0,
+        solver_strategy: str = "direct",
+    ) -> dict:
+        Q_NaOH_dist = _build_naoh_distribution(
+            test_q_naoh, n_stages, naoh_weights, naoh_strategy
+        )
+
+        if stage_targets is None:
+            stage_targets = stage_target_pHs
+
+        has_target_mode = any(target is not None for target in stage_targets)
+        org_out = (
+            _clone_org_profile(initial_org_out, metals)
+            if initial_org_out is not None
+            else [{metal: 0.0 for metal in metals} for _ in range(n_stages)]
+        )
         converged = False
+        last_max_diff = None
+        best_residual = float("inf")
+        best_org_out = _clone_org_profile(org_out, metals)
+        best_iteration = 0
 
         for iteration in range(max_iter):
             org_out_prev = copy.deepcopy(org_out)
             stage_results = []
             C_aq_current = copy.deepcopy(C_aq_feed)
             pH_current = pH_feed
-            Q_aq_current = Q_aq  # 누적 수계 유량 (NaOH 투입에 따라 증가)
+            Q_aq_current = Q_aq
             C_sulfate_current = C_sulfate
+            target_stage_converged = True
+            alpha = _get_relaxation_alpha(
+                iteration,
+                last_max_diff=last_max_diff,
+                target_mode=has_target_mode,
+                relaxation_scale=relaxation_scale,
+            )
 
             for s in range(n_stages):
                 C_org_in = org_out[s + 1] if s < n_stages - 1 else copy.deepcopy(C_org_fresh)
                 stage_num = s + 1
-                t_pH = stage_target_pHs[s]
+                t_pH = stage_targets[s]
 
                 if t_pH is not None:
                     result = solve_single_stage(
@@ -108,6 +309,10 @@ def solve_multistage_countercurrent(
                         use_competition=use_competition,
                         use_speciation=use_speciation,
                         extractant_params=extractant_params,
+                    )
+                    target_stage_converged = (
+                        target_stage_converged
+                        and result.get("target_pH_dilution_converged", True)
                     )
                 else:
                     q_naoh = Q_NaOH_dist[stage_num - 1]
@@ -126,19 +331,11 @@ def solve_multistage_countercurrent(
 
                 stage_results.append(result)
 
-                # Relaxation mixing: org_new = α × calc + (1-α) × prev
-                if iteration < 30:
-                    alpha = 0.2
-                elif iteration < 100:
-                    alpha = 0.5
-                elif iteration < 300:
-                    alpha = 0.7
-                else:
-                    alpha = 0.9
                 org_calc = result["C_org_out"]
                 org_relaxed = {}
                 for m in metals:
-                    org_relaxed[m] = alpha * org_calc[m] + (1.0 - alpha) * org_out_prev[s].get(m, 0.0)
+                    relaxed_value = alpha * org_calc[m] + (1.0 - alpha) * org_out_prev[s].get(m, 0.0)
+                    org_relaxed[m] = max(0.0, relaxed_value)
                 org_out[s] = org_relaxed
 
                 C_aq_current = copy.deepcopy(result["C_aq_out"])
@@ -147,76 +344,83 @@ def solve_multistage_countercurrent(
                 if t_pH is not None:
                     Q_aq_current = result.get("Q_aq_out_L_hr", Q_aq_current)
 
-            max_diff = 0.0
-            for s in range(n_stages):
-                for m in metals:
-                    ref_val = max(abs(org_out_prev[s].get(m, 0.0)), 1e-10)
-                    max_diff = max(max_diff, abs(org_out[s][m] - org_out_prev[s][m]) / ref_val)
-            if max_diff < tolerance:
+            max_diff = _compute_max_relative_diff(org_out, org_out_prev, metals)
+            last_max_diff = max_diff
+
+            if max_diff < best_residual:
+                best_residual = max_diff
+                best_org_out = _clone_org_profile(org_out, metals)
+                best_iteration = iteration + 1
+
+            if max_diff < tolerance and target_stage_converged:
                 converged = True
                 break
 
-        # ── 수렴 후 최종 패스: relaxation 없이 정확한 stage 결과 계산 ──
-        stage_results = []
-        C_aq_current = copy.deepcopy(C_aq_feed)
-        pH_current = pH_feed
-        Q_aq_current = Q_aq
-        C_sulfate_current = C_sulfate
-        for s in range(n_stages):
-            C_org_in = org_out[s + 1] if s < n_stages - 1 else copy.deepcopy(C_org_fresh)
-            t_pH = stage_target_pHs[s]
-            if t_pH is not None:
-                result = solve_single_stage(
-                    C_aq_in=C_aq_current, C_org_in=C_org_in,
-                    pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
-                    extractant=extractant, C_ext=C_ext,
-                    target_pH=t_pH, metals=metals,
-                    C_NaOH=C_NaOH,
-                    temperature=temperature, C_sulfate=C_sulfate_current,
-                    use_competition=use_competition, use_speciation=use_speciation,
-                    extractant_params=extractant_params,
-                )
-            else:
-                q_naoh = Q_NaOH_dist[s]
-                result = solve_single_stage(
-                    C_aq_in=C_aq_current, C_org_in=C_org_in,
-                    pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
-                    extractant=extractant, C_ext=C_ext,
-                    C_NaOH=C_NaOH, Q_NaOH=q_naoh, metals=metals,
-                    temperature=temperature, C_sulfate=C_sulfate_current,
-                    use_competition=use_competition, use_speciation=use_speciation,
-                    extractant_params=extractant_params,
-                )
-                Q_aq_current += q_naoh
-            stage_results.append(result)
-            C_aq_current = copy.deepcopy(result["C_aq_out"])
-            pH_current = result["pH_out"]
-            C_sulfate_current = result.get("C_sulfate_out_M", C_sulfate_current)
-            if t_pH is not None:
-                Q_aq_current = result.get("Q_aq_out_L_hr", Q_aq_current)
+        final_org_seed = org_out if converged else best_org_out
+        stage_results = _run_exact_stage_pass(final_org_seed, Q_NaOH_dist, stage_targets)
+        for _ in range(3):
+            refined_org_seed = [result["C_org_out"] for result in stage_results]
+            refined_results = _run_exact_stage_pass(
+                refined_org_seed, Q_NaOH_dist, stage_targets
+            )
+            refined_diff = _compute_max_relative_diff(
+                [result["C_org_out"] for result in refined_results],
+                [result["C_org_out"] for result in stage_results],
+                metals,
+            )
+            stage_results = refined_results
+            if refined_diff < max(tolerance, 1e-6):
+                break
+        return _build_result_payload(
+            stage_results=stage_results,
+            converged=converged,
+            iteration_count=(iteration + 1) if converged else best_iteration,
+            best_residual=best_residual,
+            solver_strategy=solver_strategy,
+        )
 
-        raffinate = stage_results[-1]["C_aq_out"]
-        pH_profile = [r["pH_out"] for r in stage_results]
-        overall_extraction = {}
-        for m in metals:
-            C_feed = C_aq_feed.get(m, 0.0)
-            C_raff = raffinate.get(m, 0.0)
-            overall_extraction[m] = (1.0 - C_raff / C_feed) * 100.0 if C_feed > 0 else 0.0
+    primary_result = _run_with_q_naoh(Q_NaOH, solver_strategy="direct")
+    if primary_result["converged"]:
+        return primary_result
 
-        return {
-            "stages": stage_results,
-            "raffinate": raffinate,
-            "loaded_organic": stage_results[0]["C_org_out"],
-            "pH_profile": pH_profile,
-            "NaOH_profile": [r.get("NaOH_consumed_mol_hr", 0) for r in stage_results],
-            "NaOH_flow_profile": [r.get("Q_NaOH_estimated_L_hr", 0) for r in stage_results],
-            "overall_extraction": overall_extraction,
-            "converged": converged,
-            "iterations": iteration + 1,
-            "total_NaOH_mol_hr": sum(r.get("NaOH_consumed_mol_hr", 0) for r in stage_results),
-        }
+    has_target_mode = any(target is not None for target in stage_target_pHs)
 
-    return _run_with_q_naoh(Q_NaOH)
+    if has_target_mode:
+        continuation_levels = [0.35, 0.65, 0.85, 1.0]
+        continuation_seed = None
+        best_result = primary_result
+
+        for level in continuation_levels:
+            continuation_targets = _interpolate_stage_targets(
+                stage_target_pHs, pH_feed, level
+            )
+            continuation_result = _run_with_q_naoh(
+                Q_NaOH,
+                stage_targets=continuation_targets,
+                initial_org_out=continuation_seed,
+                relaxation_scale=0.85 if level < 1.0 else 0.75,
+                solver_strategy=f"target_continuation_{level:.2f}",
+            )
+            continuation_seed = [
+                stage_result["C_org_out"] for stage_result in continuation_result["stages"]
+            ]
+
+            if continuation_result["converged"]:
+                return continuation_result
+            if continuation_result["best_residual"] < best_result["best_residual"]:
+                best_result = continuation_result
+
+        return best_result
+
+    fallback_result = _run_with_q_naoh(
+        Q_NaOH,
+        initial_org_out=[stage["C_org_out"] for stage in primary_result["stages"]],
+        relaxation_scale=0.70,
+        solver_strategy="fixed_naoh_fallback",
+    )
+    if fallback_result["converged"] or fallback_result["best_residual"] < primary_result["best_residual"]:
+        return fallback_result
+    return primary_result
 
 
 def print_multistage_result(result: dict, C_aq_feed: dict = None):
