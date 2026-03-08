@@ -24,12 +24,11 @@ except FileNotFoundError:
 
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 
 from sx_simulator.extraction_isotherm import (
     extraction_efficiency, get_effective_pH50,
-    get_effective_k, distribution_coefficient, calc_loading_fraction,
+    get_effective_k, distribution_coefficient,
 )
 from sx_simulator.config import (DEFAULT_METALS,
                                   T_REF,
@@ -39,8 +38,14 @@ from sx_simulator.dashboard_service import (
     SimulationInputs,
     build_scope_assessment,
     compute_loading_pct,
-    run_compare_simulations,
     run_simulation,
+)
+from sx_simulator.dashboard_tabs import (
+    render_compare_tab,
+    render_detail_tab,
+    render_isotherm_tab,
+    render_mccabe_thiele_tab,
+    render_results_tab,
 )
 from sx_simulator.datasets import (
     DASHBOARD_PRESETS as PRESETS,
@@ -386,423 +391,76 @@ render_scope_assessment(st.sidebar, scope_assessment)
 # TAB 1: 시뮬레이션 결과
 # =============================================================================
 with tab1:
-    if not result["converged"]:
-        st.error("현재 조건에서 다단 계산이 수렴하지 않았습니다. 결과 수치를 의사결정에 직접 사용하기 전에 입력 조건과 전략을 다시 확인하세요.")
-
-    # --- 요약 메트릭 ---
-    st.subheader("🎯 추출 결과 요약")
-    colors = METAL_COLORS
-    # 7개 금속 카드: 상단 4개 + 하단 3개
-    met_cols_row1 = st.columns(4)
-    for i, metal in enumerate(metals[:4]):
-        ext_pct = result["overall_extraction"][metal]
-        raff = result["raffinate"][metal]
-        met_cols_row1[i].metric(
-            label=f"{metal} 추출률",
-            value=f"{ext_pct:.1f}%",
-            delta=f"후액: {raff:.3f} g/L",
-        )
-    if len(metals) > 4:
-        met_cols_row2 = st.columns(4)
-        for i, metal in enumerate(metals[4:]):
-            ext_pct = result["overall_extraction"][metal]
-            raff = result["raffinate"][metal]
-            met_cols_row2[i].metric(
-                label=f"{metal} 추출률",
-                value=f"{ext_pct:.1f}%",
-                delta=f"후액: {raff:.3f} g/L",
-            )
-
-    col_info1, col_info2, col_info3, col_info4 = st.columns(4)
-    with col_info1:
-        st.metric("후액 최종 pH", f"{result['pH_profile'][-1]:.2f}")
-    with col_info2:
-        st.metric("총 NaOH 소비", f"{result['total_NaOH_mol_hr']:.1f} mol/hr")
-    with col_info3:
-        if loading_pct > 85:
-            st.metric("최대 로딩률", f"{loading_pct:.1f}%", delta="⚠️ 포화 근접", delta_color="inverse")
-        else:
-            st.metric("최대 로딩률", f"{loading_pct:.1f}%")
-    with col_info4:
-        if result["converged"]:
-            st.metric("수렴 상태", "수렴", delta=f"{result['iterations']} iter")
-        else:
-            st.metric("수렴 상태", "미수렴", delta=f"{result['iterations']} iter", delta_color="inverse")
-
-    st.markdown("---")
-    st.subheader("🧭 현재 시뮬레이션 해석 가이드")
-    st.caption(f"활성 프로필: **{st.session_state.ui_param_profile}**")
-    render_scope_assessment(st, scope_assessment)
-    if selected_preset_note:
-        st.warning(f"프리셋 주의: {selected_preset_note}")
-
-    st.markdown("---")
-
-    # --- Stage별 추출률 바 차트 ---
-    st.subheader("📊 금속별 추출률")
-    ext_data = pd.DataFrame({
-        "금속": metals,
-        "추출률 (%)": [result["overall_extraction"][m] for m in metals],
-        "피드 (g/L)": [C_aq_feed[m] for m in metals],
-        "후액 (g/L)": [result["raffinate"][m] for m in metals],
-    })
-
-    fig_ext = px.bar(ext_data, x="금속", y="추출률 (%)",
-                     color="금속", color_discrete_sequence=[colors.get(m, "#636e72") for m in metals],
-                     text="추출률 (%)")
-    fig_ext.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-    fig_ext.update_layout(height=400, showlegend=False,
-                          plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                          yaxis=dict(range=[0, 110]))
-    st.plotly_chart(fig_ext, use_container_width=True)
-
-    st.markdown("---")
-
-    # --- pH 프로파일 + NaOH 프로파일 ---
-    col_ph, col_naoh = st.columns(2)
-
-    with col_ph:
-        st.subheader("📉 Stage별 pH 프로파일")
-        stages_x = [0] + list(range(1, n_stages + 1))
-        pH_y = [float(pH_feed)] + result["pH_profile"]
-        fig_ph = go.Figure()
-        fig_ph.add_trace(go.Scatter(
-            x=stages_x, y=pH_y,
-            mode='lines+markers', name='pH',
-            line=dict(color='#e94560', width=3),
-            marker=dict(size=12, symbol='circle'),
-        ))
-        fig_ph.update_layout(
-            xaxis_title="Stage", yaxis_title="pH",
-            height=350, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(
-                tickmode='array',
-                tickvals=stages_x,
-                ticktext=["Feed"] + [f"St.{i}" for i in range(1, n_stages + 1)]
-            ),
-        )
-        st.plotly_chart(fig_ph, use_container_width=True)
-
-    with col_naoh:
-        st.subheader("🧪 Stage별 NaOH 소비량")
-        fig_naoh = go.Figure()
-        naoh_y = [0.0] + result["NaOH_profile"]
-        fig_naoh.add_trace(go.Bar(
-            x=stages_x, y=naoh_y,
-            marker_color='#0f3460', text=[f"{v:.1f}" if v > 0 else "" for v in naoh_y],
-            textposition='outside',
-        ))
-        fig_naoh.update_layout(
-            xaxis_title="Stage", yaxis_title="NaOH (mol/hr)",
-            height=350, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(
-                tickmode='array',
-                tickvals=stages_x,
-                ticktext=["Feed"] + [f"St.{i}" for i in range(1, n_stages + 1)]
-            ),
-        )
-        st.plotly_chart(fig_naoh, use_container_width=True)
-
-    # --- Stage별 금속 농도 변화 (수계) ---
-    st.subheader("🔬 Stage별 수계 금속 농도 변화")
-    conc_data = {"Stage": ["Feed"] + [f"Stage {i+1}" for i in range(n_stages)]}
-    for metal in metals:
-        conc_data[metal] = [C_aq_feed[metal]]
-        for sr in result["stages"]:
-            conc_data[metal].append(sr["C_aq_out"][metal])
-
-    df_conc = pd.DataFrame(conc_data)
-    fig_conc = go.Figure()
-    color_list = [colors.get(m, "#636e72") for m in metals]
-    for i, metal in enumerate(metals):
-        fig_conc.add_trace(go.Scatter(
-            x=df_conc["Stage"], y=df_conc[metal],
-            mode='lines+markers', name=metal,
-            line=dict(color=color_list[i], width=2),
-            marker=dict(size=8),
-        ))
-    fig_conc.update_layout(
-        xaxis_title="Stage", yaxis_title="농도 (g/L)",
-        height=400, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    render_results_tab(
+        result=result,
+        metals=metals,
+        loading_pct=loading_pct,
+        scope_assessment=scope_assessment,
+        profile_label=st.session_state.ui_param_profile,
+        selected_preset_note=selected_preset_note,
+        C_aq_feed=C_aq_feed,
+        pH_feed=pH_feed,
+        n_stages=n_stages,
+        metal_colors=METAL_COLORS,
+        scope_renderer=render_scope_assessment,
     )
-    st.plotly_chart(fig_conc, use_container_width=True)
 
 # =============================================================================
 # TAB 2: pH Isotherm 곡선
 # =============================================================================
 with tab3:
-    st.subheader(f"📈 pH-추출률 Isotherm ({extractant}, {C_ext}M, {temperature:.0f}°C)")
-
-    fig_iso = go.Figure()
-    pH_range = PH_PLOT_RANGE
-    for i, metal in enumerate(metals):
-        E_values = [
-            extraction_efficiency(
-                pH, metal, extractant, C_ext, temperature,
-                extractant_params=active_extractant_params,
-            )
-            for pH in pH_range
-        ]
-        fig_iso.add_trace(go.Scatter(
-            x=pH_range, y=E_values,
-            mode='lines', name=metal,
-            line=dict(color=color_list[i], width=3),
-        ))
-    fig_iso.update_layout(
-        xaxis_title="pH", yaxis_title="추출률 (%)",
-        height=500, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        yaxis=dict(range=[0, 105]),
+    render_isotherm_tab(
+        metals=metals,
+        extractant=extractant,
+        C_ext=C_ext,
+        temperature=temperature,
+        target_pH=target_pH,
+        active_extractant_params=active_extractant_params,
+        metal_colors=METAL_COLORS,
+        ph_plot_range=PH_PLOT_RANGE,
     )
-    # 현재 pH 표시
-    if target_pH:
-        fig_iso.add_vline(x=target_pH, line_dash="dash", line_color="red",
-                          annotation_text=f"목표 pH = {target_pH}")
-
-    st.plotly_chart(fig_iso, use_container_width=True)
-
-    # pH50 테이블
-    st.subheader("📋 금속별 pH₅₀ (보정값)")
-    ph50_data = []
-    for metal in metals:
-        ph50_eff = get_effective_pH50(
-            metal, extractant, C_ext, temperature,
-            extractant_params=active_extractant_params,
-        )
-        k_eff = get_effective_k(
-            metal, extractant, temperature,
-            extractant_params=active_extractant_params,
-        )
-        params = active_extractant_params[extractant][metal]
-        ph50_data.append({
-            "금속": metal, "pH₅₀ (기준)": params["pH50"],
-            "pH₅₀ (보정)": round(ph50_eff, 2), "k (기준)": params["k"],
-            "k (보정)": round(k_eff, 2),
-            "E_max (%)": params["E_max"], "n_H": params["n_H"],
-        })
-    st.dataframe(pd.DataFrame(ph50_data), use_container_width=True, hide_index=True)
 
 # =============================================================================
 # TAB 8: McCabe-Thiele 다이어그램
 # =============================================================================
 with tab8:
-    st.subheader("📉 McCabe-Thiele 다이어그램")
-    st.markdown("선택한 금속에 대한 조작선(Operating Line)과 평형 곡선(Equilibrium Curve)을 표시합니다.")
-    
-    mt_metal = st.selectbox("다이어그램을 그릴 금속 선택", metals, index= metals.index("Co") if "Co" in metals else 0)
-    
-    # 평형 곡선 생성을 위한 기준 pH (최종 후액 pH 기준)
-    ref_pH = result["pH_profile"][-1]
-    st.caption(f"💡 평형 곡선은 최종 후액 기준 pH ({ref_pH:.2f}) 로 계산되었습니다.")
-    
-    # X축(수계 농도) 범위 설정 (후액 ~ 피드)
-    x_max = C_aq_feed[mt_metal] * 1.2
-    x_vals = np.linspace(0, x_max, 100)
-    
-    # 평형 곡선 계산
-    eq_y_vals = []
-    for x in x_vals:
-        # 단일 금속만 존재한다고 단순 가정하여 Isotherm 곡선 생성
-        D = distribution_coefficient(
-            ref_pH, mt_metal, extractant, C_ext, temperature,
-            extractant_params=active_extractant_params,
-        )
-        # 로딩 감쇠 적용 (단일 금속 근사)
-        from sx_simulator.extraction_isotherm import loading_damping_factor
-        sim_org = {mt_metal: D * x}
-        from sx_simulator.extraction_isotherm import calc_loading_fraction
-        loading = calc_loading_fraction(
-            sim_org, extractant, C_ext, [mt_metal],
-            extractant_params=active_extractant_params,
-        )
-        D = D * loading_damping_factor(loading)
-        
-        # y = D * x
-        y = D * x
-        eq_y_vals.append(y)
-        
-    fig_mt = go.Figure()
-    
-    # 1. 평형 곡선
-    fig_mt.add_trace(go.Scatter(x=x_vals, y=eq_y_vals, mode='lines', name='Equilibrium Curve (평형선)', line=dict(color='blue', width=2)))
-    
-    # 2. 조작선 (Operating Line)
-    # y = (Q_aq / Q_org) * x + (y_in - (Q_aq / Q_org) * x_in)
-    # 여기서 x_in 은 feed, y_in 은 result['loaded_organic'][metal]
-    slope = Q_aq / Q_org
-    x_in_feed = C_aq_feed[mt_metal]
-    y_out_org = result['loaded_organic'][mt_metal]
-    x_out_raff = result['raffinate'][mt_metal]
-    y_in_org = 0.0 # fresh solvent
-    
-    fig_mt.add_trace(go.Scatter(
-        x=[x_out_raff, x_in_feed], 
-        y=[y_in_org, y_out_org], 
-        mode='lines', name='Operating Line (조작선)', 
-        line=dict(color='red', width=2, dash='dash')
-    ))
-    
-    # 3. Stage 단계 그리기
-    stage_x = []
-    stage_y = []
-    
-    # 역류 추출이므로 (x_out, y_in) 에서 시작.
-    # Stage N(마지막 단, x_raff, y_in) -> 평형선 위 (x_raff, y_stage_N) 
-    # -> 조작선 표면 -> ...
-    current_x = x_out_raff
-    current_y = y_in_org
-    
-    stage_x.append(current_x)
-    stage_y.append(current_y)
-    
-        # 실제 시뮬레이션된 단수 포인트들을 기반으로 단계 그리기
-    for s_idx in range(n_stages-1, -1, -1):
-        # 수직선: 수계 농도는 유지, 유기상 농도가 평형(또는 실제 stage 출구)으로 이동
-        actual_y = result['stages'][s_idx]['C_org_out'][mt_metal]
-        stage_x.append(current_x)
-        stage_y.append(actual_y)
-        
-        # 수평선: 유기상 농도는 유지, 수계 농도가 다음 stage(또는 feed) 입구로 이동
-        # 조작선 상의 해당 x점 찾기
-        current_y = actual_y
-        if s_idx == 0:
-            current_x = C_aq_feed[mt_metal]
-        else:
-            current_x = result['stages'][s_idx - 1]['C_aq_out'][mt_metal]
-            
-        stage_x.append(current_x)
-        stage_y.append(current_y)
-        
-    fig_mt.add_trace(go.Scatter(
-        x=stage_x, y=stage_y,
-        mode='lines+markers', name='Stages (실제 단수)',
-        line=dict(color='green', width=2, shape='hv'),
-        marker=dict(size=8, symbol='circle')
-    ))
-    
-    fig_mt.update_layout(
-        title=f"McCabe-Thiele for {mt_metal}",
-        xaxis_title=f"Aqueous {mt_metal} (g/L)",
-        yaxis_title=f"Organic {mt_metal} (g/L)",
-        height=600,
-        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-        legend=dict(x=0.01, y=0.99),
+    render_mccabe_thiele_tab(
+        metals=metals,
+        result=result,
+        extractant=extractant,
+        C_ext=C_ext,
+        temperature=temperature,
+        C_aq_feed=C_aq_feed,
+        n_stages=n_stages,
+        active_extractant_params=active_extractant_params,
     )
-    st.plotly_chart(fig_mt, use_container_width=True)
 
 # =============================================================================
 # TAB 4: 추출제 비교
 # =============================================================================
 with tab4:
-    st.subheader("🔬 Cyanex 272 vs D2EHPA 비교")
-    compare_pH = st.slider("비교 목표 pH", 2.0, 8.0, 5.0, 0.1, key="compare_ph")
-    st.info(
-        f"비교 조건: 공통 C_ext {C_ext:.4f} M, {n_stages}단, {temperature:.0f}°C, SO₄²⁻ {C_sulfate:.3f} M"
+    render_compare_tab(
+        metals=metals,
+        simulation_inputs=simulation_inputs,
+        active_extractant_params=active_extractant_params,
+        temperature=temperature,
+        C_ext=C_ext,
+        n_stages=n_stages,
+        C_sulfate=C_sulfate,
+        ph_plot_range=PH_PLOT_RANGE,
     )
-
-    results_compare = run_compare_simulations(
-        simulation_inputs,
-        compare_pH,
-        active_extractant_params,
-    )
-
-    # 비교 바 차트
-    compare_data = []
-    for ext in ["Cyanex 272", "D2EHPA"]:
-        for m in metals:
-            compare_data.append({
-                "추출제": ext, "금속": m,
-                "추출률 (%)": results_compare[ext]["overall_extraction"][m],
-            })
-
-    df_compare = pd.DataFrame(compare_data)
-    fig_compare = px.bar(df_compare, x="금속", y="추출률 (%)", color="추출제",
-                         barmode="group", color_discrete_sequence=["#e94560", "#0f3460"],
-                         text="추출률 (%)")
-    fig_compare.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-    fig_compare.update_layout(height=450, yaxis=dict(range=[0, 115]),
-                              plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    st.plotly_chart(fig_compare, use_container_width=True)
-
-    # NaOH 소비 비교
-    col_c1, col_c2 = st.columns(2)
-    with col_c1:
-        st.metric("Cyanex 272 NaOH", f"{results_compare['Cyanex 272']['total_NaOH_mol_hr']:.1f} mol/hr")
-    with col_c2:
-        st.metric("D2EHPA NaOH", f"{results_compare['D2EHPA']['total_NaOH_mol_hr']:.1f} mol/hr")
-
-    # Isotherm 비교
-    st.markdown("---")
-    st.subheader("📈 Isotherm 비교")
-    selected_metal = st.selectbox("금속 선택", metals, index=2)
-
-    fig_iso_cmp = go.Figure()
-    for ext, color in [("Cyanex 272", "#e94560"), ("D2EHPA", "#0f3460")]:
-        ext_c = 0.5 if ext == "Cyanex 272" else 0.64
-        E_vals = [
-            extraction_efficiency(
-                pH, selected_metal, ext, ext_c, temperature,
-                extractant_params=active_extractant_params,
-            )
-            for pH in pH_range
-        ]
-        fig_iso_cmp.add_trace(go.Scatter(
-            x=pH_range, y=E_vals, mode='lines', name=ext,
-            line=dict(color=color, width=3),
-        ))
-    fig_iso_cmp.add_vline(x=compare_pH, line_dash="dash", line_color="gray",
-                           annotation_text=f"비교 pH = {compare_pH}")
-    fig_iso_cmp.update_layout(
-        title=f"{selected_metal} 추출 Isotherm 비교",
-        xaxis_title="pH", yaxis_title="추출률 (%)",
-        height=400, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-    )
-    st.plotly_chart(fig_iso_cmp, use_container_width=True)
 
 # =============================================================================
 # TAB 4: 상세 데이터
 # =============================================================================
 with tab5:
-    st.subheader("📋 시뮬레이션 상세 결과")
-
-    # 수렴 정보
-    st.info(f"수렴: {'✅ Yes' if result['converged'] else '❌ No'} | "
-            f"반복: {result['iterations']} | "
-            f"후액 pH: {result['pH_profile'][-1]:.2f} | "
-            f"NaOH 총: {result['total_NaOH_mol_hr']:.1f} mol/hr")
-
-    # Stage별 상세 테이블
-    for i, sr in enumerate(result["stages"]):
-        with st.expander(f"Stage {i+1} (pH = {sr['pH_out']:.2f}, NaOH = {sr.get('NaOH_consumed_mol_hr', 0):.2f} mol/hr)"):
-            rows = []
-            for m in metals:
-                rows.append({
-                    "금속": m,
-                    "수계 입구 (g/L)": C_aq_feed[m] if i == 0 else result["stages"][i-1]["C_aq_out"][m],
-                    "수계 출구 (g/L)": sr["C_aq_out"][m],
-                    "유기계 출구 (g/L)": sr["C_org_out"][m],
-                    "Stage 추출률 (%)": sr["extraction"][m],
-                })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    # 전체 물질수지 체크
-    st.markdown("---")
-    st.subheader("⚖️ 물질수지 검증")
-    balance_data = []
-    for m in metals:
-        feed_flow = C_aq_feed[m] * Q_aq
-        raff_flow = result["raffinate"][m] * Q_aq
-        org_flow = result["loaded_organic"][m] * Q_org
-        balance = feed_flow - raff_flow - org_flow
-        balance_data.append({
-            "금속": m,
-            "피드 (g/hr)": round(feed_flow, 3),
-            "후액 (g/hr)": round(raff_flow, 3),
-            "유기계 (g/hr)": round(org_flow, 3),
-            "잔차 (g/hr)": round(balance, 3),
-        })
-    st.dataframe(pd.DataFrame(balance_data), use_container_width=True, hide_index=True)
+    render_detail_tab(
+        result=result,
+        metals=metals,
+        C_aq_feed=C_aq_feed,
+        Q_aq=Q_aq,
+        Q_org=Q_org,
+    )
 
 
 # =============================================================================
@@ -812,6 +470,7 @@ with tab2:
     st.subheader(f"📐 시스템 수식 및 메커니즘 알고리즘 ({extractant}, {C_ext}M, {temperature:.0f}°C)")
     st.markdown("현재 사이드바에 설정된 파라미터 값이 적용된 수식입니다. "
                 "파라미터를 변경하면 수식도 실시간으로 업데이트됩니다.")
+    color_list = [METAL_COLORS.get(metal, "#636e72") for metal in metals]
 
     # ---------------------------------------------------------------
     # 1. 추출률 Isotherm 수식

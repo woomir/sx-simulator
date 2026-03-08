@@ -43,6 +43,7 @@ streamlit run sx_dashboard.py
 ```text
 sx_dashboard.py
   -> sx_simulator/dashboard_service.py
+      -> sx_simulator/dashboard_tabs.py
       -> sx_simulator/multistage_sx.py
           -> sx_simulator/single_stage.py
               -> sx_simulator/extraction_isotherm.py
@@ -64,6 +65,12 @@ sx_dashboard.py
 - 메인 계산/비교 계산 kwargs 조립
 - 검증 커버리지 평가
 - UI와 엔진 사이의 얇은 서비스 계층
+
+#### `sx_simulator/dashboard_tabs.py`
+
+- 주요 동적 탭 렌더링 함수 모음
+- 시뮬레이션 결과, Isotherm, McCabe-Thiele, 비교, 상세 데이터 탭 담당
+- 메인 대시보드 파일의 UI 블록을 모듈 단위로 분리
 
 #### `sx_simulator/multistage_sx.py`
 
@@ -182,6 +189,8 @@ sx_dashboard.py
   - 예: `docs/v2.1.1_리팩토링_기록.md`
   - 예: `docs/v2.1.1_2차_리팩토링_기록.md`
   - 예: `docs/v2.1.1_3차_리팩토링_기록.md`
+  - 예: `docs/v2.1.1_4차_리팩토링_기록.md`
+  - 예: `docs/v2.1.1_5차_리팩토링_기록.md`
 
 원칙:
 
@@ -214,12 +223,13 @@ sx_dashboard.py
 2. `README.md`
 3. `sx_dashboard.py`
 4. `sx_simulator/dashboard_service.py`
-5. `sx_simulator/multistage_sx.py`
-6. `sx_simulator/single_stage.py`
-7. `sx_simulator/extraction_isotherm.py`
-8. `sx_simulator/config.py`
-9. `validation_test.py`
-10. `test_verification.py`
+5. `sx_simulator/dashboard_tabs.py`
+6. `sx_simulator/multistage_sx.py`
+7. `sx_simulator/single_stage.py`
+8. `sx_simulator/extraction_isotherm.py`
+9. `sx_simulator/config.py`
+10. `validation_test.py`
+11. `test_verification.py`
 
 ## 10. 최근 내부 구조 변경 기록
 
@@ -228,5 +238,7 @@ sx_dashboard.py
 - `docs/v2.1.1_리팩토링_기록.md`
 - `docs/v2.1.1_2차_리팩토링_기록.md`
 - `docs/v2.1.1_3차_리팩토링_기록.md`
+- `docs/v2.1.1_4차_리팩토링_기록.md`
+- `docs/v2.1.1_5차_리팩토링_기록.md`
 
 이 문서들을 함께 보면 왜 구조가 바뀌었는지 추적할 수 있다.
