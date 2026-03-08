@@ -19,6 +19,7 @@ from .extraction_isotherm import (
     loading_damping_factor,
     calc_free_NaL,
     compute_competitive_extractions,
+    get_aqueous_speciation_state,
 )
 from .config import (MOLAR_MASS, DEFAULT_METALS,
                      SPECIATION_CONSTANTS)
@@ -196,6 +197,8 @@ def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float, C_aq: dict = None,
     수계의 총 해리가능 양성자(H+) 몰스피드(mol/hr)를 계산합니다.
     황산(HSO4-) 수용액의 버퍼 효과(pKa=1.99) 포함.
     Phase 3: 종분화(MOH⁺)에 의한 OH⁻ 소비(즉, H⁺ 생성과 동등한 효과) 반영.
+    또한 황산염 착물(MSO4^0)이 자유 금속 분율을 낮춰 hydrolysis를 완화하는
+    효과를 간접 반영합니다.
     """
     free_H = 10.0 ** (-pH)
     Ka_HSO4 = 10.0 ** (-1.99)
@@ -204,16 +207,14 @@ def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float, C_aq: dict = None,
     
     hydrolysis_H = 0.0
     if use_speciation and C_aq:
-        Kw = 10.0 ** (-14.0)
-        free_OH = Kw / free_H
         for metal, conc_gL in C_aq.items():
             if metal in SPECIATION_CONSTANTS:
                 MW = MOLAR_MASS[metal]
                 C_M_total = conc_gL / MW
-                K_MOH = SPECIATION_CONSTANTS[metal]["K_MOH"]
-                # C_M_total = [M2+] * (1 + K_MOH * [OH-])
-                conc_M2 = C_M_total / (1.0 + K_MOH * free_OH)
-                conc_MOH = K_MOH * conc_M2 * free_OH
+                speciation_state = get_aqueous_speciation_state(
+                    metal, pH, C_sulfate
+                )
+                conc_MOH = C_M_total * speciation_state["hydroxo_fraction"]
                 hydrolysis_H += conc_MOH
                 
     return (free_H + bound_H + hydrolysis_H) * Q_aq

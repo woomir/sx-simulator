@@ -57,8 +57,12 @@ MOLAR_MASS = {
 # 각 추출제에 대해 금속별 파라미터를 딕셔너리로 정리합니다.
 # pH50, k 값은 ALTA 2024 Figure 1 및 관련 문헌에서 추정한 초기값입니다.
 # 실제 데이터로 보정(fitting) 작업이 필요합니다.
+#
+# 아래 `LITERATURE_BASE_PARAMS`는 문헌/기본 추정값을 보관합니다.
+# 현장 적용용 조정치는 별도 override로 관리하고, 실제 기본 런타임 값은
+# `FIELD_CALIBRATED_PARAMS`와 `EXTRACTANT_PARAMS`를 통해 제공합니다.
 
-EXTRACTANT_PARAMS = {
+LITERATURE_BASE_PARAMS = {
     # -----------------------------------------------------------------
     # Cyanex 272 (Bis(2,4,4-trimethylpentyl)phosphinic acid)
     # -----------------------------------------------------------------
@@ -90,7 +94,7 @@ EXTRACTANT_PARAMS = {
             "gamma": 0.008,
         },
         "Ni": {
-            "pH50": 6.3,       # Data Fitting: 현장 Isd 108 희석제 반영 (원래 5.8에서 상향)
+            "pH50": 5.8,       # 문헌 기본값
             "k": 2.5,          # 상대적으로 완만한 전이
             "E_max": 99.0,
             "n_H": 2,          # Ni²⁺ → 2H⁺ 방출
@@ -224,7 +228,7 @@ EXTRACTANT_PARAMS = {
             "gamma": 0.004,
         },
         "Mg": {
-            "pH50": 3.2,       # Data Fitting: 현장 데이터 기반 하향 (원래 4.5에서 하향)
+            "pH50": 4.5,       # 문헌 기본값
             "k": 2.0,
             "E_max": 85.0,
             "n_H": 2,
@@ -240,14 +244,38 @@ EXTRACTANT_PARAMS = {
 # =============================================================================
 # 모델 보정 프로필
 # =============================================================================
-# 현재 EXTRACTANT_PARAMS는 현장 보정(Isd 108) 값이 반영된 상태입니다.
-# 문헌 기본값으로 되돌려 비교하고 싶을 때를 위해 프로필 생성 함수를 제공합니다.
-FIELD_CALIBRATED_PARAMS = copy.deepcopy(EXTRACTANT_PARAMS)
+# 문헌 기본값과 현장 보정값을 코드상에서 분리해 둡니다.
+# - literature_default: 문헌/기본 추정값
+# - field_calibrated: 현장 Isd 108 데이터에 맞춘 오버레이 적용값
 
-LITERATURE_PROFILE_OVERRIDES = {
-    ("Cyanex 272", "Ni"): {"pH50": 5.8},
-    ("D2EHPA", "Mg"): {"pH50": 4.5},
+SITE_PARAMETER_OVERRIDES = {
+    ("Cyanex 272", "Ni"): {
+        "pH50": 6.3,  # 현장 Isd 108 희석제 반영
+    },
+    ("D2EHPA", "Mg"): {
+        "pH50": 3.2,  # 현장 데이터 기반 하향 보정
+    },
 }
+
+
+def _build_parameter_profile(base_params: dict, overrides: dict | None = None) -> dict:
+    """기본 파라미터에 선택적 override를 적용한 깊은 복사본을 반환합니다."""
+    params = copy.deepcopy(base_params)
+    if not overrides:
+        return params
+
+    for (extractant, metal), values in overrides.items():
+        params[extractant][metal].update(values)
+    return params
+
+
+FIELD_CALIBRATED_PARAMS = _build_parameter_profile(
+    LITERATURE_BASE_PARAMS,
+    SITE_PARAMETER_OVERRIDES,
+)
+
+# 하위 호환용 기본 별칭: 엔진이 명시적 파라미터 세트를 받지 않으면 이 값을 사용합니다.
+EXTRACTANT_PARAMS = copy.deepcopy(FIELD_CALIBRATED_PARAMS)
 
 
 def get_parameter_profile(profile_name: str = "field_calibrated") -> dict:
@@ -264,10 +292,7 @@ def get_parameter_profile(profile_name: str = "field_calibrated") -> dict:
         return copy.deepcopy(FIELD_CALIBRATED_PARAMS)
 
     if profile_name == "literature_default":
-        params = copy.deepcopy(FIELD_CALIBRATED_PARAMS)
-        for (extractant, metal), overrides in LITERATURE_PROFILE_OVERRIDES.items():
-            params[extractant][metal].update(overrides)
-        return params
+        return copy.deepcopy(LITERATURE_BASE_PARAMS)
 
     raise ValueError(f"지원하지 않는 파라미터 프로필: {profile_name}")
 
@@ -344,4 +369,3 @@ VALIDATED_FIELD_WINDOW = {
 }
 
 # Force Streamlit Cloud to reload this file
-

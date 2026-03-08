@@ -18,7 +18,7 @@ pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 
 import math
 from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
                      T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION,
-                     EXTRACTION_PRIORITY)
+                     EXTRACTION_PRIORITY, SPECIATION_CONSTANTS)
 
 
 def _resolve_extractant_params(extractant_params: dict = None) -> dict:
@@ -263,6 +263,64 @@ def loading_damping_factor(loading_fraction: float) -> float:
         return 1.0
     factor = 1.0 / (1.0 + math.exp(exponent))
     return factor
+
+
+def get_free_sulfate_concentration(pH: float, C_sulfate: float) -> float:
+    """
+    총 황산염 농도에서 자유 SO4^2- 농도를 근사 계산합니다.
+
+    HSO4- ⇌ H+ + SO4^2- 평형을 사용하며:
+      [SO4^2-] = C_sulfate,total * Ka / (Ka + [H+])
+    """
+    if C_sulfate <= 0:
+        return 0.0
+
+    free_H = 10.0 ** (-pH)
+    Ka_HSO4 = 10.0 ** (-1.99)
+    return C_sulfate * Ka_HSO4 / (Ka_HSO4 + free_H)
+
+
+def get_aqueous_speciation_state(
+    metal: str,
+    pH: float,
+    C_sulfate: float = 0.0,
+) -> dict:
+    """
+    단순 1:1 수산화/황산염 착물 가정에서 총 금속 대비 종분율을 반환합니다.
+
+    반환 분율은 다음 관계를 만족합니다:
+      free + hydroxo + sulfate = 1
+    """
+    if metal not in SPECIATION_CONSTANTS:
+        return {
+            "free_metal_fraction": 1.0,
+            "hydroxo_fraction": 0.0,
+            "sulfate_fraction": 0.0,
+            "free_sulfate_m": get_free_sulfate_concentration(pH, C_sulfate),
+        }
+
+    free_H = 10.0 ** (-pH)
+    Kw = 10.0 ** (-14.0)
+    free_OH = Kw / max(free_H, 1e-30)
+    free_sulfate = get_free_sulfate_concentration(pH, C_sulfate)
+
+    K_MOH = SPECIATION_CONSTANTS[metal].get("K_MOH", 0.0)
+    K_MSO4 = SPECIATION_CONSTANTS[metal].get("K_MSO4", 0.0)
+
+    hydroxo_term = K_MOH * free_OH
+    sulfate_term = K_MSO4 * free_sulfate
+    denominator = max(1.0, 1.0 + hydroxo_term + sulfate_term)
+
+    free_fraction = 1.0 / denominator
+    hydroxo_fraction = hydroxo_term / denominator
+    sulfate_fraction = sulfate_term / denominator
+
+    return {
+        "free_metal_fraction": free_fraction,
+        "hydroxo_fraction": hydroxo_fraction,
+        "sulfate_fraction": sulfate_fraction,
+        "free_sulfate_m": free_sulfate,
+    }
 
 
 # =========================================================================
