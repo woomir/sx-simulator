@@ -32,9 +32,14 @@ from sx_simulator.extraction_isotherm import (
     get_effective_k, distribution_coefficient, calc_loading_fraction,
 )
 from sx_simulator.multistage_sx import solve_multistage_countercurrent
-from sx_simulator.config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
-                                  T_REF, MAX_LOADING_FRACTION,
+from sx_simulator.config import (EXTRACTANT_PARAMS, DEFAULT_METALS,
+                                  T_REF,
                                   VALIDATED_FIELD_WINDOW, get_parameter_profile)
+from sx_simulator.datasets import (
+    DASHBOARD_PRESETS as PRESETS,
+    KNOWN_PRESET_NOTES,
+    calc_sulfate_from_feed,
+)
 from sx_simulator.fitting import (
     fit_sigmoid, sigmoid_model
 )
@@ -62,25 +67,6 @@ st.markdown("""
     h2, h3 { color: #0f3460; }
 </style>
 """, unsafe_allow_html=True)
-
-# =============================================================================
-# 실증 데이터 프리셋 (v1.9.0)
-# =============================================================================
-PRESETS = {
-    "Data1 (CoSX-D9-data)": {"ext": "Cyanex 272", "C_ext": 0.6308, "pH": 6.10, "n_stages": 5, "T": 25.0, "feed_flow": 25.0, "naoh_flow": 11.0, "org_flow": 118.0, "input": {"Li": 5.283, "Ni": 33.894, "Co": 3.096, "Mn": 0.067, "Ca": 0.002, "Mg": 0.026, "Zn": 0.0}},
-    "Data2 (CoSX-D5-data)": {"ext": "Cyanex 272", "C_ext": 0.6308, "pH": 5.89, "n_stages": 5, "T": 25.0, "feed_flow": 25.0, "naoh_flow": 9.4, "org_flow": 118.0, "input": {"Li": 5.260, "Ni": 33.876, "Co": 3.053, "Mn": 0.071, "Ca": 0.001, "Mg": 0.030, "Zn": 0.0}},
-    "Data3 (CoSX-D2-data)": {"ext": "Cyanex 272", "C_ext": 0.6308, "pH": 7.00, "n_stages": 5, "T": 25.0, "feed_flow": 20.0, "naoh_flow": 9.4, "org_flow": 118.0, "input": {"Li": 5.852, "Ni": 28.476, "Co": 4.106, "Mn": 0.091, "Ca": 0.002, "Mg": 0.035, "Zn": 0.0}},
-    "Data4 (IMSX-D5-Data)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 4.00, "n_stages": 5, "T": 25.0, "feed_flow": 30.0, "naoh_flow": 4.2, "org_flow": 124.0, "input": {"Li": 9.767, "Ni": 28.889, "Co": 16.178, "Mn": 15.204, "Ca": 0.336, "Mg": 0.149, "Zn": 0.006}},
-    "Data5 (IMSX-D9-Data)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 4.20, "n_stages": 5, "T": 25.0, "feed_flow": 25.0, "naoh_flow": 3.2, "org_flow": 100.0, "input": {"Li": 0.013, "Ni": 71.000, "Co": 8.700, "Mn": 8.900, "Ca": 0.250, "Mg": 3.000, "Zn": 0.600}},
-    "Data6 (IMSX-D?)": {"ext": "D2EHPA", "C_ext": 0.6053, "pH": 3.90, "n_stages": 5, "T": 25.0, "feed_flow": 30.0, "naoh_flow": 3.5, "org_flow": 100.0, "input": {"Li": 8.390, "Ni": 27.917, "Co": 15.400, "Mn": 12.883, "Ca": 0.413, "Mg": 0.129, "Zn": 0.012}}
-}
-
-KNOWN_PRESET_NOTES = {
-    "Data5 (IMSX-D9-Data)": (
-        "Data5의 Li 후액 값은 입력 Li 농도보다 높아 물질수지상 일관되지 않습니다. "
-        "검증 리포트에서는 Li 지표를 제외해서 해석하는 편이 안전합니다."
-    ),
-}
 
 PROFILE_LABELS = {
     "현장 보정 (Isd 108)": "field_calibrated",
@@ -285,16 +271,15 @@ pH_feed = st.sidebar.number_input("Feed pH", 0.0, 14.0, 3.0, 0.1)
 Q_aq = st.sidebar.number_input("Feed 수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0, key="ui_Q_aq")
 
 # 총 황산염 농도 — Feed 금속 황산염 조성으로부터 자동 계산
-# 2가 양이온(MSO4): C_M/MW_M, 1가 양이온(Li2SO4): C_Li/(2*MW_Li)
-C_sulfate = (
-    C_Li / (2 * MOLAR_MASS["Li"])  # Li2SO4 → 2Li+ + SO4²⁻
-    + C_Ni / MOLAR_MASS["Ni"]
-    + C_Co / MOLAR_MASS["Co"]
-    + C_Mn / MOLAR_MASS["Mn"]
-    + C_Ca / MOLAR_MASS["Ca"]
-    + C_Mg / MOLAR_MASS["Mg"]
-    + C_Zn / MOLAR_MASS["Zn"]
-)
+C_sulfate = calc_sulfate_from_feed({
+    "Li": C_Li,
+    "Ni": C_Ni,
+    "Co": C_Co,
+    "Mn": C_Mn,
+    "Ca": C_Ca,
+    "Mg": C_Mg,
+    "Zn": C_Zn,
+})
 st.sidebar.info(f"💎 계산된 SO₄²⁻: **{C_sulfate:.3f} M**")
 
 st.sidebar.markdown("---")
