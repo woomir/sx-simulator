@@ -102,6 +102,16 @@ def apply_profile() -> None:
     st.session_state.custom_params = get_parameter_profile(profile_key)
 
 
+def load_markdown_doc(relative_path: str, missing_message: str) -> str:
+    """docs 또는 루트의 markdown 파일을 읽어 반환합니다."""
+    doc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+    try:
+        with open(doc_path, "r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError:
+        return missing_message
+
+
 def render_scope_assessment(container, assessment: dict) -> None:
     """검증 커버리지 평가를 Streamlit 컨테이너에 렌더링합니다."""
     if assessment["level"] == "high":
@@ -346,12 +356,12 @@ tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab9, tab10, tab11, tab7, tab0 = st.ta
 # TAB 0: 사용자 매뉴얼
 # =============================================================================
 with tab0:
-    manual_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "user_manual.md")
-    try:
-        with open(manual_path, "r", encoding="utf-8") as f:
-            st.markdown(f.read())
-    except FileNotFoundError:
-        st.error(f"매뉴얼 파일을 찾을 수 없습니다: {manual_path}")
+    st.markdown(
+        load_markdown_doc(
+            os.path.join("docs", "user_manual.md"),
+            "매뉴얼 파일을 찾을 수 없습니다.",
+        )
+    )
 
 # =============================================================================
 # 시뮬레이션 실행
@@ -1226,88 +1236,12 @@ with tab6:
 # TAB 9: 용어 해설 (Glossary)
 # =============================================================================
 with tab9:
-    st.subheader("📖 용어 해설")
-    st.markdown("이 시뮬레이터에서 사용되는 전문 용어, 기호, 약어를 쉽게 풀어서 설명합니다.")
-
-    # --- 공정 용어 ---
-    st.markdown("### ⚗️ 공정 용어")
-    st.markdown("""
-| 용어 | 영어 | 뜻 |
-|---|---|---|
-| **역류** | Counter-current | 수계(물)와 유기계(기름)가 서로 반대 방향으로 흐르는 방식. 추출 효율을 극대화하는 운전법 |
-| **수계** | Aqueous Phase | 금속이 녹아 있는 물(수용액) 쪽. 약자로 'Aq'라고 씀 |
-| **유기계** | Organic Phase | 추출제가 녹아 있는 기름(유기용매) 쪽. 약자로 'Org'라고 씀 |
-| **피드** | Feed | 공정에 처음 투입되는 원료 용액 |
-| **후액** | Raffinate | 금속이 추출된 뒤 남은 수계 용액. 금속 농도가 낮아진 상태 |
-| **로딩** | Loading | 추출제가 금속을 얼마나 담고 있는지의 비율. 100%에 가까우면 '포화'되어 더 이상 추출 못함 |
-| **사포닌화** | Saponification | 추출제(HL)를 NaOH로 미리 처리하여 Na형(NaL)으로 바꿔주는 것. 추출 효율을 높이는 전처리 |
-| **O/A 비** | Organic/Aqueous Ratio | 유기계 유량 ÷ 수계 유량. 이 비율이 크면 추출제가 상대적으로 많아져 추출률이 올라감 |
-    """)
-
-    # --- 화학/열역학 용어 ---
-    st.markdown("### 🧪 화학·열역학 용어")
-    st.markdown("""
-| 용어 | 영어 | 뜻 |
-|---|---|---|
-| **추출률 (%)** | Extraction Efficiency | 피드 속 금속이 유기계로 얼마나 옮겨갔는지의 백분율 |
-| **분배계수 (D)** | Distribution Coefficient | (유기계 금속 농도) ÷ (수계 금속 농도). 값이 클수록 금속이 유기계를 '좋아함' |
-| **등온선** | Isotherm | 온도를 고정한 상태에서 pH에 따라 추출률이 어떻게 변하는지 그린 S자 곡선 |
-| **완충 용량** | Buffer Capacity | 용액이 pH 변화에 저항하는 능력. 황산염이 많으면 pH가 쉽게 변하지 않음 |
-| **Proton Balance** | Proton Balance | 반응 전후로 H⁺(수소이온)가 얼마나 생기고 사라지는지 계산하는 것 |
-| **물질수지** | Mass Balance | '들어간 양 = 나온 양'이라는 보존 법칙. 시뮬레이터의 핵심 원리 |
-    """)
-
-    # --- 수학 기호 ---
-    st.markdown("### 📐 수학 기호·파라미터")
-    st.markdown("""
-| 기호 | 이름 | 뜻 |
-|---|---|---|
-| **pH₅₀** | 반추출 pH | 추출률이 50%가 되는 pH 값. 금속마다 다름 |
-| **k** | 기울기 계수 | S자 곡선이 얼마나 가파른지를 나타냄. 클수록 pH 변화에 민감 |
-| **E_max** | 최대 추출률 | 아무리 pH를 올려도 넘지 못하는 추출률의 상한(보통 99~100%) |
-| **n_H** | 수소이온 화학양론수 | 금속 1개가 추출될 때 방출되는 H⁺의 개수 (예: Ni²⁺→2, Co²⁺→2) |
-| **α (알파)** | 추출제 농도 보정 계수 | 추출제 농도가 pH₅₀에 미치는 영향의 크기 |
-| **β (베타)** | 온도 보정 계수 | 온도가 pH₅₀을 얼마나 변화시키는지의 크기 |
-| **γ (감마)** | k-온도 보정 계수 | 온도가 기울기(k)를 얼마나 변화시키는지의 크기 |
-| **C_ext** | 추출제 농도 (M) | 유기계에 녹인 추출제의 몰 농도 |
-| **Q** | 유량 (L/hr) | 액체가 시간당 흐르는 양. Q_aq=수계, Q_org=유기계 |
-    """)
-
-    # --- 차트 용어 ---
-    st.markdown("### 📈 차트·다이어그램 용어")
-    st.markdown("""
-| 용어 | 영어 | 뜻 |
-|---|---|---|
-| **McCabe-Thiele** | McCabe-Thiele Diagram | 다단 추출 공정의 이론 단수를 시각적으로 구하는 그래프. 화학공학 교과서의 대표적인 분석법 |
-| **평형 곡선** | Equilibrium Curve | 수계 농도와 유기계 농도가 평형(더 이상 변하지 않는 상태)을 이룰 때의 관계를 나타낸 곡선 |
-| **조작선** | Operating Line | 물질수지(들어간 양=나온 양)로부터 그려지는 직선. 실제 공정의 운전 조건을 나타냄 |
-| **Pinch Point** | Pinch Point | 평형 곡선과 조작선이 거의 만나는 지점. 여기서는 단수를 아무리 늘려도 추출이 더 이상 안 됨 |
-| **Sigmoid** | Sigmoid Curve | 'S'자 모양의 수학 함수. pH에 따른 추출률을 모사하는 데 사용 |
-| **R²** | 결정계수 (Coefficient of Determination) | 피팅(회귀)이 얼마나 잘 맞는지의 지표. 1.0에 가까울수록 완벽한 적합 |
-    """)
-
-    # --- 추출제 이름 ---
-    st.markdown("### 🫗 추출제 이름")
-    st.markdown("""
-| 이름 | 정식 명칭 | 설명 |
-|---|---|---|
-| **Cyanex 272** | Bis(2,4,4-trimethylpentyl)phosphinic acid | 코발트(Co)/니켈(Ni) 분리에 탁월한 인산 계열 추출제 |
-| **D2EHPA** | Di-(2-ethylhexyl)phosphoric acid | 범용적인 인산 계열 추출제. 가격↓, 선택성은 Cyanex 272보다 낮음 |
-    """)
-
-    # --- 시뮬레이터 특수 기능 ---
-    st.markdown("### ⚙️ 시뮬레이터 고급 기능 용어")
-    st.markdown("""
-| 용어 | 뜻 |
-|---|---|
-| **Bisection Solver** | 이분법 탐색. '정답'이 있는 범위를 반씩 좁혀가며 빠르고 안정적으로 해(solution)를 찾는 수치 알고리즘 |
-| **NaOH 분배 전략** | 다단 공정에서 총 NaOH를 각 Stage에 어떻게 나눠줄지 결정하는 방식 (균등/전단집중/커스텀) |
-| **균등 (Uniform)** | 모든 Stage에 NaOH를 동일하게 나눠주는 방식 |
-| **전단집중 (Front-loaded)** | 앞쪽 Stage에 NaOH를 더 많이 주는 방식. pH를 빨리 올려 초기 추출을 강화 |
-| **수렴 (Convergence)** | 다단 계산을 반복할 때, 결과가 더 이상 변하지 않고 안정되는 상태 |
-| **피팅 (Fitting)** | 실험 데이터에 수학 모델을 맞추는(최적화하는) 과정 |
-| **MSE Framework** | Mixed-Solvent Electrolyte. 이 시뮬레이터가 기반으로 하는 열역학 프레임워크 이름 |
-    """)
+    st.markdown(
+        load_markdown_doc(
+            os.path.join("docs", "glossary.md"),
+            "용어 해설 문서를 찾을 수 없습니다.",
+        )
+    )
 
 # =============================================================================
 # TAB 10: 파라미터 및 문헌 확인
@@ -1317,24 +1251,12 @@ with tab10:
     st.markdown("이 시뮬레이터에 적용된 열역학 모델 및 파라미터 값들의 출처와 세부 데이터베이스 표를 제공합니다.")
     
     # 1. 참고 문헌
-    st.markdown("### 📖 참고 문헌 (Literature References)")
-    st.markdown(r"""
-* **기본 프레임워크 설계 (MSE Thermodynamic, Component Balance)**:
-  * Wang et al. (2002). "A thermodynamic framework for predicting the phase behavior of aqueous and mixed-solvent extraction systems."
-  * ALTA 2024 Metallurgical Conference Materials (Mixer-Settler SX Simulation)
-* **종분화 (Speciation) 및 수화 이온 반응 상수 ($K_{MOH}$, $K_{MSO_4}$)**:
-  * Baes, C. F., & Mesmer, R. E. (1976). *The Hydrolysis of Cations*. Wiley.
-  * Smith, R. M., & Martell, A. E. (1976). *Critical Stability Constants*. Plenum Press.
-* **추출제 파라미터 ($\text{pH}_{50}$, $k$, $\alpha$, $E_{\max}$ 등)**:
-  * **Cyanex 272 / D2EHPA**:
-    * Mohapatra, M. et al. (2007). "Solvent extraction of heavy metals from aqueous solutions." *Hydrometallurgy*.
-    * Pereira, D. D. et al. (2014). "Separation of nickel and cobalt from sulfate leach liquor." *Minerals Engineering*.
-    * 내부 피팅 데이터 및 국내 배터리 재활용 센터 운전 기준 보정.
-* **고로딩(High-Loading) 다핵 착물 형성에 따른 추출제 배위수 방어 (v2.0)**:
-  * D2EHPA 및 Cyanex 272가 고농도 금속 추출 환경(추출제 부족상태)에서 다핵 올리고머(Multi-nuclear oligomeric complexes)를 형성하여 유효 화학양론 결합수($n_{\text{eff}}$)가 감소(Shift)하는 메커니즘을 시그모이드 경쟁 곡선에 수학적으로 반영.
-  * Rydberg, J. et al. (2004). *Solvent Extraction Principles and Practice*. Marcel Dekker.
-  * Neuman, R. D., et al. (1990). "Formation of polynuclear complexes in acidic organophosphorus extraction systems".
-    """)
+    st.markdown(
+        load_markdown_doc(
+            os.path.join("docs", "references.md"),
+            "참고 문헌 문서를 찾을 수 없습니다.",
+        )
+    )
 
     # 2. 파라미터 데이터
     st.markdown("---")
@@ -1361,23 +1283,12 @@ with tab10:
 # TAB 11: 데이터 피팅 검증 이력
 # =============================================================================
 with tab11:
-    st.subheader("🧪 현장 실험 데이터 피팅 및 검증 이력")
-    st.markdown("연구원 제공 실제 현장 실험 데이터(Isd 108 희석제, 사포닌화 등)를 바탕으로 시뮬레이터 파라미터를 보정(Data Fitting)한 주요 연혁을 기록합니다.")
-    
-    st.markdown("---")
-    st.markdown("### 📌 [v1.9.0] 2026-03-06 : CoSX 및 IMSX 현장 데이터(Data1~6) 기반 피팅")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info("**1. Cyanex 272 (Ni 과추출 방지)**")
-        st.markdown("- **배경**: Data1~3 (CoSX) 검증 시 Ni이 이론 모델 대비 덜 추출되는 현상 관찰 (Isd 108 희석제 영향으로 추정)\n- **조정 내역**: `Ni` 추출 시작점 $\text{pH}_{50}$파라미터를 **5.8 → 6.3**으로 상향\n- **결과**: Ni의 시뮬레이션 오차율 대폭 완화")
-    with col2:
-        st.success("**2. D2EHPA (Mg 저추출 방지)**")
-        st.markdown("- **배경**: Data4~6 (IMSX) 검증 시 D2EHPA에서 Mg이 조기 추출되는 현상 관찰\n- **조정 내역**: `Mg` 추출 시작점 $\text{pH}_{50}$파라미터를 **4.5 → 3.2**로 하향\n- **결과**: Mg 피팅 오차율 0%에 근접하는 정확도 확보")
-    
-    st.markdown("---")
-    st.markdown("### 📊 검증 데이터 프리셋 로드")
-    st.markdown("좌측 사이드바의 **[🧪 현장 실험 Data 프리셋]** 메뉴를 통해, v1.9.0 피팅에 사용되었던 Data1~6 조건을 원클릭으로 호출하여 즉각 연산해 볼 수 있습니다.")
+    st.markdown(
+        load_markdown_doc(
+            os.path.join("docs", "validation_history.md"),
+            "데이터 피팅 검증 이력 문서를 찾을 수 없습니다.",
+        )
+    )
 
 # =============================================================================
 # TAB 7: 변경 이력 (Changelog)

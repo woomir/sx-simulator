@@ -173,6 +173,9 @@ sx_dashboard.py
 
 - 사용자 문서
   - 예: `docs/user_manual.md`
+  - 예: `docs/glossary.md`
+  - 예: `docs/references.md`
+  - 예: `docs/validation_history.md`
 - 검토/분석 문서
   - 예: 일반화 검토, 검증 보고서
 - 개발자 리팩토링 기록
