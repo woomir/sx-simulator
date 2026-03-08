@@ -223,10 +223,21 @@ st.sidebar.markdown("---")
 # --- NaOH 조건 ---
 st.sidebar.header("🧪 pH 제어 (NaOH)")
 pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode", help="'목표 pH' 모드를 적극 권장합니다. 시뮬레이터가 원하는 산도에 도달하기 위한 최적 알칼리 투입량을 역산합니다.")
+C_NaOH = 0.0
+Q_NaOH = 0.0
 
 if pH_mode == "목표 pH (자동 NaOH)":
     target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
     use_staged_pH = st.sidebar.checkbox("Stage별 차등 pH", value=False)
+    enable_target_pH_dilution = st.sidebar.checkbox(
+        "NaOH 희석 self-consistent 추정",
+        value=False,
+        help="활성화 시 목표 pH 달성에 필요한 NaOH 유량을 역산하고, 가정한 NaOH 농도 기준으로 수계 희석 효과까지 함께 계산합니다. 현장 프리셋은 기존 검증과의 일관성을 위해 기본 OFF를 권장합니다.",
+    )
+    if enable_target_pH_dilution:
+        C_NaOH = st.sidebar.number_input(
+            "NaOH 농도 (M, 희석 추정용)", 0.1, 20.0, 5.0, 0.5
+        )
 else:
     target_pH = None
     C_NaOH = st.sidebar.number_input("NaOH 농도 (M)", 0.1, 20.0, 5.0, 0.5)
@@ -335,7 +346,7 @@ simulation_inputs = SimulationInputs(
     pH_mode=pH_mode,
     target_pH=target_pH,
     staged_pHs=staged_pHs,
-    C_NaOH=C_NaOH if pH_mode == "고정 NaOH" else 0.0,
+    C_NaOH=C_NaOH,
     Q_NaOH=Q_NaOH if pH_mode == "고정 NaOH" else 0.0,
     naoh_strategy=naoh_strategy,
     naoh_weights=naoh_weights,

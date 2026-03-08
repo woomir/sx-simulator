@@ -101,6 +101,7 @@ def solve_multistage_countercurrent(
                         pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
                         extractant=extractant, C_ext=C_ext,
                         target_pH=t_pH, metals=metals,
+                        C_NaOH=C_NaOH,
                         temperature=temperature,
                         C_sulfate=C_sulfate,
                         use_competition=use_competition,
@@ -141,6 +142,8 @@ def solve_multistage_countercurrent(
 
                 C_aq_current = copy.deepcopy(result["C_aq_out"])
                 pH_current = result["pH_out"]
+                if t_pH is not None:
+                    Q_aq_current = result.get("Q_aq_out_L_hr", Q_aq_current)
 
             max_diff = 0.0
             for s in range(n_stages):
@@ -165,6 +168,7 @@ def solve_multistage_countercurrent(
                     pH_in=pH_current, Q_aq=Q_aq_current, Q_org=Q_org,
                     extractant=extractant, C_ext=C_ext,
                     target_pH=t_pH, metals=metals,
+                    C_NaOH=C_NaOH,
                     temperature=temperature, C_sulfate=C_sulfate,
                     use_competition=use_competition, use_speciation=use_speciation,
                     extractant_params=extractant_params,
@@ -184,6 +188,8 @@ def solve_multistage_countercurrent(
             stage_results.append(result)
             C_aq_current = copy.deepcopy(result["C_aq_out"])
             pH_current = result["pH_out"]
+            if t_pH is not None:
+                Q_aq_current = result.get("Q_aq_out_L_hr", Q_aq_current)
 
         raffinate = stage_results[-1]["C_aq_out"]
         pH_profile = [r["pH_out"] for r in stage_results]
@@ -199,6 +205,7 @@ def solve_multistage_countercurrent(
             "loaded_organic": stage_results[0]["C_org_out"],
             "pH_profile": pH_profile,
             "NaOH_profile": [r.get("NaOH_consumed_mol_hr", 0) for r in stage_results],
+            "NaOH_flow_profile": [r.get("Q_NaOH_estimated_L_hr", 0) for r in stage_results],
             "overall_extraction": overall_extraction,
             "converged": converged,
             "iterations": iteration + 1,

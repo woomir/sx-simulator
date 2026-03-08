@@ -124,9 +124,67 @@ def step3_mccabe_thiele_logic():
     print(f"Step 3 Passed: {passed}")
     return passed
 
+
+def step4_target_pH_dilution_consistency():
+    print("\n=== Step 4: Target pH Self-Consistent Dilution Check ===")
+    feed_aq = {'Li': 1.5, 'Ni': 5.0, 'Co': 3.0, 'Mn': 2.0}
+    feed_org = {m: 0.0 for m in DEFAULT_METALS}
+    target_ph = 4.5
+    vol_aq = 100.0
+    vol_org = 100.0
+    extractant = "Cyanex 272"
+    t_c = 25.0
+    sulfate = 0.5
+    c_naoh = 5.0
+
+    target_result = solve_single_stage(
+        C_aq_in=feed_aq, C_org_in=feed_org, pH_in=3.0,
+        Q_aq=vol_aq, Q_org=vol_org,
+        extractant=extractant, C_ext=0.5,
+        target_pH=target_ph, C_NaOH=c_naoh,
+        temperature=t_c, C_sulfate=sulfate,
+    )
+
+    q_naoh_est = target_result.get("Q_NaOH_estimated_L_hr", 0.0)
+    fixed_result = solve_single_stage(
+        C_aq_in=feed_aq, C_org_in=feed_org, pH_in=3.0,
+        Q_aq=vol_aq, Q_org=vol_org,
+        extractant=extractant, C_ext=0.5,
+        C_NaOH=c_naoh, Q_NaOH=q_naoh_est,
+        temperature=t_c, C_sulfate=sulfate,
+    )
+
+    passed = True
+    pH_diff = abs(fixed_result["pH_out"] - target_ph)
+    print(
+        f"Estimated NaOH flow: {q_naoh_est:.4f} L/hr, "
+        f"Target-mode dilution iterations: {target_result.get('dilution_iterations', 0)}"
+    )
+    print(
+        f"Fixed-NaOH replay pH: {fixed_result['pH_out']:.4f}, "
+        f"Target pH: {target_ph:.4f}, Diff: {pH_diff:.6f}"
+    )
+    if pH_diff > 2e-2:
+        passed = False
+
+    for metal in ["Li", "Ni", "Co", "Mn"]:
+        diff = abs(
+            fixed_result["C_aq_out"].get(metal, 0.0)
+            - target_result["C_aq_out"].get(metal, 0.0)
+        )
+        print(
+            f"{metal} target-vs-fixed raffinate diff: {diff:.6f} g/L"
+        )
+        if diff > 5e-3:
+            passed = False
+
+    print(f"Step 4 Passed: {passed}")
+    return passed
+
 if __name__ == "__main__":
     p1 = step1_mass_balance()
     p2 = step2_isotherm_consistency()
     p3 = step3_mccabe_thiele_logic()
-    
-    print("\nOVERALL VALIDATION:", "PASSED" if (p1 and p2 and p3) else "FAILED")
+    p4 = step4_target_pH_dilution_consistency()
+
+    print("\nOVERALL VALIDATION:", "PASSED" if (p1 and p2 and p3 and p4) else "FAILED")
