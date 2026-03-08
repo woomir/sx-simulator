@@ -16,6 +16,37 @@ VALIDATION_BASES = (
     "raw_feed_target_pH",
 )
 
+LEGACY_REGRESSION_MAE_THRESHOLDS = {
+    "Li": 0.90,
+    "Ni": 0.80,
+    "Co": 0.08,
+    "Mn": 0.01,
+    "Ca": 0.01,
+    "Mg": 0.01,
+    "Zn": 0.01,
+}
+
+LEGACY_REGRESSION_DATASET_MAE_THRESHOLDS = {
+    "Data1": 0.35,
+    "Data2": 0.20,
+    "Data3": 0.15,
+    "Data4": 0.40,
+    "Data5": 0.08,
+    "Data6": 0.30,
+}
+
+LEGACY_REGRESSION_ABS_ERROR_THRESHOLDS = {
+    ("Data1", "Ni"): 2.20,
+    ("Data2", "Ni"): 1.20,
+    ("Data3", "Li"): 0.90,
+    ("Data4", "Li"): 2.30,
+    ("Data4", "Co"): 0.15,
+    ("Data5", "Ni"): 0.20,
+    ("Data5", "Co"): 0.20,
+    ("Data6", "Ni"): 1.00,
+    ("Data6", "Co"): 0.10,
+}
+
 
 FIELD_DATASETS = {
     "Data1 (CoSX-D9-data)": {
