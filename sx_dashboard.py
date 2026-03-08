@@ -32,9 +32,10 @@ from sx_simulator.extraction_isotherm import (
     get_effective_k, distribution_coefficient, calc_loading_fraction,
 )
 from sx_simulator.multistage_sx import solve_multistage_countercurrent
-from sx_simulator.config import (EXTRACTANT_PARAMS, DEFAULT_METALS,
+from sx_simulator.config import (DEFAULT_METALS,
                                   T_REF,
-                                  VALIDATED_FIELD_WINDOW, get_parameter_profile)
+                                  VALIDATED_FIELD_WINDOW, get_parameter_profile,
+                                  SPECIATION_CONSTANTS)
 from sx_simulator.datasets import (
     DASHBOARD_PRESETS as PRESETS,
     KNOWN_PRESET_NOTES,
@@ -74,20 +75,15 @@ PROFILE_LABELS = {
 }
 
 
-def apply_params_to_global() -> None:
-    """세션 상태의 파라미터를 현재 엔진 전역 설정에 반영합니다."""
-    for ext_name in st.session_state.custom_params:
-        for metal in st.session_state.custom_params[ext_name]:
-            EXTRACTANT_PARAMS[ext_name][metal].update(
-                st.session_state.custom_params[ext_name][metal]
-            )
+def get_active_extractant_params() -> dict:
+    """현재 세션에서 사용하는 파라미터 세트를 반환합니다."""
+    return st.session_state.custom_params
 
 
 def apply_profile() -> None:
     """선택한 보정 프로필을 세션과 엔진에 반영합니다."""
     profile_key = PROFILE_LABELS[st.session_state.ui_param_profile]
     st.session_state.custom_params = get_parameter_profile(profile_key)
-    apply_params_to_global()
 
 
 def build_scope_assessment(profile_key: str, pH_mode: str, target_pH: float,
@@ -227,7 +223,6 @@ if "custom_params" not in st.session_state:
     st.session_state.custom_params = get_parameter_profile(
         PROFILE_LABELS[st.session_state.ui_param_profile]
     )
-    apply_params_to_global()
 
 st.sidebar.selectbox(
     "🧪 현장 실험 Data 프리셋", 
@@ -374,12 +369,9 @@ if edit_params:
         st.session_state.custom_params = get_parameter_profile(
             PROFILE_LABELS[st.session_state.ui_param_profile]
         )
-        apply_params_to_global()
         st.rerun()
 
-# 파라미터를 전역에 반영 (모듈 레벨 변수 직접 수정)
-# Note: Streamlit은 각 세션이 독립 프로세스이므로 세션 간 오염은 제한적입니다.
-apply_params_to_global()
+active_extractant_params = get_active_extractant_params()
 
 # =============================================================================
 # 메인 영역
@@ -423,6 +415,7 @@ with st.spinner("시뮬레이션 계산 중..."):
         C_sulfate=C_sulfate,
         use_competition=True,
         use_speciation=True,
+        extractant_params=active_extractant_params,
     )
 
     if pH_mode == "목표 pH (자동 NaOH)":
@@ -622,7 +615,13 @@ with tab3:
     fig_iso = go.Figure()
     pH_range = [x * 0.1 for x in range(10, 101)]
     for i, metal in enumerate(metals):
-        E_values = [extraction_efficiency(pH, metal, extractant, C_ext, temperature) for pH in pH_range]
+        E_values = [
+            extraction_efficiency(
+                pH, metal, extractant, C_ext, temperature,
+                extractant_params=active_extractant_params,
+            )
+            for pH in pH_range
+        ]
         fig_iso.add_trace(go.Scatter(
             x=pH_range, y=E_values,
             mode='lines', name=metal,
@@ -645,9 +644,15 @@ with tab3:
     st.subheader("📋 금속별 pH₅₀ (보정값)")
     ph50_data = []
     for metal in metals:
-        ph50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
-        k_eff = get_effective_k(metal, extractant, temperature)
-        params = EXTRACTANT_PARAMS[extractant][metal]
+        ph50_eff = get_effective_pH50(
+            metal, extractant, C_ext, temperature,
+            extractant_params=active_extractant_params,
+        )
+        k_eff = get_effective_k(
+            metal, extractant, temperature,
+            extractant_params=active_extractant_params,
+        )
+        params = active_extractant_params[extractant][metal]
         ph50_data.append({
             "금속": metal, "pH₅₀ (기준)": params["pH50"],
             "pH₅₀ (보정)": round(ph50_eff, 2), "k (기준)": params["k"],
@@ -677,12 +682,18 @@ with tab8:
     eq_y_vals = []
     for x in x_vals:
         # 단일 금속만 존재한다고 단순 가정하여 Isotherm 곡선 생성
-        D = distribution_coefficient(ref_pH, mt_metal, extractant, C_ext, temperature)
+        D = distribution_coefficient(
+            ref_pH, mt_metal, extractant, C_ext, temperature,
+            extractant_params=active_extractant_params,
+        )
         # 로딩 감쇠 적용 (단일 금속 근사)
         from sx_simulator.extraction_isotherm import loading_damping_factor
         sim_org = {mt_metal: D * x}
         from sx_simulator.extraction_isotherm import calc_loading_fraction
-        loading = calc_loading_fraction(sim_org, extractant, C_ext, [mt_metal])
+        loading = calc_loading_fraction(
+            sim_org, extractant, C_ext, [mt_metal],
+            extractant_params=active_extractant_params,
+        )
         D = D * loading_damping_factor(loading)
         
         # y = D * x
@@ -780,6 +791,7 @@ with tab4:
             C_sulfate=C_sulfate,
             use_competition=True,
             use_speciation=True,
+            extractant_params=active_extractant_params,
         )
         results_compare[ext] = r
 
@@ -816,7 +828,13 @@ with tab4:
     fig_iso_cmp = go.Figure()
     for ext, color in [("Cyanex 272", "#e94560"), ("D2EHPA", "#0f3460")]:
         ext_c = 0.5 if ext == "Cyanex 272" else 0.64
-        E_vals = [extraction_efficiency(pH, selected_metal, ext, ext_c, temperature) for pH in pH_range]
+        E_vals = [
+            extraction_efficiency(
+                pH, selected_metal, ext, ext_c, temperature,
+                extractant_params=active_extractant_params,
+            )
+            for pH in pH_range
+        ]
         fig_iso_cmp.add_trace(go.Scatter(
             x=pH_range, y=E_vals, mode='lines', name=ext,
             line=dict(color=color, width=3),
@@ -903,9 +921,15 @@ with tab2:
     # 금속별 실제 수식 전개
     st.markdown("#### 금속별 적용 수식")
     for metal in metals:
-        params = EXTRACTANT_PARAMS[extractant][metal]
-        ph50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
-        k_eff = get_effective_k(metal, extractant, temperature)
+        params = active_extractant_params[extractant][metal]
+        ph50_eff = get_effective_pH50(
+            metal, extractant, C_ext, temperature,
+            extractant_params=active_extractant_params,
+        )
+        k_eff = get_effective_k(
+            metal, extractant, temperature,
+            extractant_params=active_extractant_params,
+        )
         col_eq, col_plot = st.columns([3, 2])
 
         with col_eq:
@@ -950,12 +974,21 @@ with tab2:
             st.caption("유기상 잔여 액체 추출제량에 비례하여 높은 로딩(Loading) 시 다핵 착물 형성에 따른 추출 효율을 동적 감소시킵니다.")
             # 해당 금속의 미니 Isotherm 차트
             pHs = [x * 0.1 for x in range(10, 101)]
-            Es = [extraction_efficiency(pH, metal, extractant, C_ext, temperature) for pH in pHs]
+            Es = [
+                extraction_efficiency(
+                    pH, metal, extractant, C_ext, temperature,
+                    extractant_params=active_extractant_params,
+                )
+                for pH in pHs
+            ]
             fig_mini = go.Figure()
             fig_mini.add_trace(go.Scatter(x=pHs, y=Es, mode='lines',
                 line=dict(color=color_list[metals.index(metal)], width=2)))
             if target_pH:
-                E_at_target = extraction_efficiency(target_pH, metal, extractant, C_ext, temperature)
+                E_at_target = extraction_efficiency(
+                    target_pH, metal, extractant, C_ext, temperature,
+                    extractant_params=active_extractant_params,
+                )
                 fig_mini.add_trace(go.Scatter(x=[target_pH], y=[E_at_target],
                     mode='markers', marker=dict(size=12, color='red', symbol='x'),
                     name=f'pH={target_pH}'))
@@ -980,8 +1013,15 @@ with tab2:
         st.markdown(f"**목표 pH = {target_pH}에서의 분배 계수:**")
         d_data = []
         for metal in metals:
-            E_val = extraction_efficiency(target_pH, metal, extractant, C_ext, temperature)
-            D_val = distribution_coefficient(target_pH, metal, extractant, C_ext, temperature=temperature)
+            E_val = extraction_efficiency(
+                target_pH, metal, extractant, C_ext, temperature,
+                extractant_params=active_extractant_params,
+            )
+            D_val = distribution_coefficient(
+                target_pH, metal, extractant, C_ext,
+                temperature=temperature,
+                extractant_params=active_extractant_params,
+            )
             d_data.append({"금속": metal, f"E(pH={target_pH})": f"{E_val:.2f}%",
                            f"D(pH={target_pH})": f"{D_val:.4f}"})
         st.dataframe(pd.DataFrame(d_data), use_container_width=True, hide_index=True)
@@ -1020,7 +1060,7 @@ with tab2:
 
     st.markdown("**금속별 H⁺ 방출:**")
     for metal in metals:
-        n_H = EXTRACTANT_PARAMS[extractant][metal]["n_H"]
+        n_H = active_extractant_params[extractant][metal]["n_H"]
         charge = "+" if n_H == 1 else f"{n_H}+"
         st.latex(
             rf"\text{{{metal}}}^{{{charge}}} \rightarrow {n_H} \text{{H}}^+ \text{{ 방출}}"
@@ -1090,7 +1130,14 @@ with tab2:
         if target_pH:
             st.markdown(f"**pH = {target_pH}에서 분리 계수:**")
             sep_data = []
-            D_vals = {m: distribution_coefficient(target_pH, m, extractant, C_ext, temperature=temperature) for m in metals}
+            D_vals = {
+                m: distribution_coefficient(
+                    target_pH, m, extractant, C_ext,
+                    temperature=temperature,
+                    extractant_params=active_extractant_params,
+                )
+                for m in metals
+            }
             for i, m1 in enumerate(metals):
                 for m2 in metals[i+1:]:
                     if D_vals[m1] <= 1e-10 and D_vals[m2] <= 1e-10:
@@ -1109,9 +1156,15 @@ with tab2:
     st.markdown("### 📋 현재 파라미터 요약")
     param_rows = []
     for metal in metals:
-        p = EXTRACTANT_PARAMS[extractant][metal]
-        ph50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
-        k_eff = get_effective_k(metal, extractant, temperature)
+        p = active_extractant_params[extractant][metal]
+        ph50_eff = get_effective_pH50(
+            metal, extractant, C_ext, temperature,
+            extractant_params=active_extractant_params,
+        )
+        k_eff = get_effective_k(
+            metal, extractant, temperature,
+            extractant_params=active_extractant_params,
+        )
         param_rows.append({
             "금속": metal,
             "pH₅₀ (기준)": p["pH50"],
@@ -1256,9 +1309,9 @@ with tab6:
                         # --- 파라미터 적용 버튼 (Sigmoid만) ---
                         if metal_name in DEFAULT_METALS:
                             if st.button(f"✅ {metal_name} 피팅 파라미터 적용", key=f"apply_{metal_name}"):
-                                EXTRACTANT_PARAMS[extractant][metal_name]["pH50"] = params["pH50"]
-                                EXTRACTANT_PARAMS[extractant][metal_name]["k"] = params["k"]
-                                EXTRACTANT_PARAMS[extractant][metal_name]["E_max"] = params["E_max"]
+                                st.session_state.custom_params[extractant][metal_name]["pH50"] = params["pH50"]
+                                st.session_state.custom_params[extractant][metal_name]["k"] = params["k"]
+                                st.session_state.custom_params[extractant][metal_name]["E_max"] = params["E_max"]
                                 st.success(f"{metal_name} 파라미터가 적용되었습니다! 페이지를 새로고침하면 시뮬레이션에 반영됩니다.")
                                 st.rerun()
 
@@ -1384,16 +1437,15 @@ with tab10:
     # 2. 파라미터 데이터
     st.markdown("---")
     st.markdown("### 🔬 추출제 초기 파라미터 (Extractant Database)")
-    from sx_simulator.config import EXTRACTANT_PARAMS, SPECIATION_CONSTANTS
     
     t10_col1, t10_col2 = st.columns(2)
     with t10_col1:
         st.markdown("**Cyanex 272 기초 파라미터**")
-        df_cyanex = pd.DataFrame(EXTRACTANT_PARAMS["Cyanex 272"]).T
+        df_cyanex = pd.DataFrame(active_extractant_params["Cyanex 272"]).T
         st.dataframe(df_cyanex, use_container_width=True)
     with t10_col2:
         st.markdown("**D2EHPA 기초 파라미터**")
-        df_d2ehpa = pd.DataFrame(EXTRACTANT_PARAMS["D2EHPA"]).T
+        df_d2ehpa = pd.DataFrame(active_extractant_params["D2EHPA"]).T
         st.dataframe(df_d2ehpa, use_container_width=True)
     st.caption("위 값들은 `$T_{\\text{ref}} = 25^{\\circ}\\text{C}$`, 기준 농도 단위에서 도출된 이분법/시그모이드 파라미터의 초기 기준점이며, 시뮬레이션 환경에 맞춰 좌측 사이드바 설정대로 수동/동적 보정이 이루어집니다.")
 

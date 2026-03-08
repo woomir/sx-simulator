@@ -21,8 +21,28 @@ from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
                      EXTRACTION_PRIORITY)
 
 
+def _resolve_extractant_params(extractant_params: dict = None) -> dict:
+    """명시적 파라미터 세트가 없으면 기본 전역 설정을 사용합니다."""
+    return extractant_params if extractant_params is not None else EXTRACTANT_PARAMS
+
+
+def _get_metal_params(
+    metal: str,
+    extractant: str,
+    extractant_params: dict = None,
+) -> dict:
+    """추출제/금속 조합의 파라미터를 반환하고 입력을 검증합니다."""
+    params_store = _resolve_extractant_params(extractant_params)
+    if extractant not in params_store:
+        raise ValueError(f"지원하지 않는 추출제: {extractant}")
+    if metal not in params_store[extractant]:
+        raise ValueError(f"지원하지 않는 금속: {metal} (추출제: {extractant})")
+    return params_store[extractant][metal]
+
+
 def get_effective_pH50(metal: str, extractant: str, C_ext: float,
-                       temperature: float = None) -> float:
+                       temperature: float = None,
+                       extractant_params: dict = None) -> float:
     """
     추출제 농도와 온도에 따라 보정된 pH50 값을 반환합니다.
 
@@ -42,7 +62,7 @@ def get_effective_pH50(metal: str, extractant: str, C_ext: float,
     float
         보정된 pH50 값
     """
-    params = EXTRACTANT_PARAMS[extractant][metal]
+    params = _get_metal_params(metal, extractant, extractant_params)
     pH50_ref = params["pH50"]
     alpha = params["alpha"]
     C_ref = params["C_ref"]
@@ -59,7 +79,8 @@ def get_effective_pH50(metal: str, extractant: str, C_ext: float,
 
 
 def get_effective_k(metal: str, extractant: str,
-                    temperature: float = None) -> float:
+                    temperature: float = None,
+                    extractant_params: dict = None) -> float:
     """
     온도에 따라 보정된 시그모이드 기울기(k) 값을 반환합니다.
 
@@ -77,7 +98,7 @@ def get_effective_k(metal: str, extractant: str,
     float
         보정된 k 값
     """
-    params = EXTRACTANT_PARAMS[extractant][metal]
+    params = _get_metal_params(metal, extractant, extractant_params)
     k_ref = params["k"]
     gamma = params.get("gamma", 0.0)
 
@@ -87,7 +108,8 @@ def get_effective_k(metal: str, extractant: str,
 
 
 def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
-                          temperature: float = None) -> float:
+                          temperature: float = None,
+                          extractant_params: dict = None) -> float:
     """
     주어진 pH와 온도에서 특정 금속의 추출률(%)을 계산합니다.
 
@@ -109,15 +131,11 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     float
         추출률 (0 ~ E_max, %)
     """
-    if extractant not in EXTRACTANT_PARAMS:
-        raise ValueError(f"지원하지 않는 추출제: {extractant}")
-    if metal not in EXTRACTANT_PARAMS[extractant]:
-        raise ValueError(f"지원하지 않는 금속: {metal} (추출제: {extractant})")
-    params = EXTRACTANT_PARAMS[extractant][metal]
+    params = _get_metal_params(metal, extractant, extractant_params)
     E_max = params["E_max"]
 
-    pH50_eff = get_effective_pH50(metal, extractant, C_ext, temperature)
-    k_eff = get_effective_k(metal, extractant, temperature)
+    pH50_eff = get_effective_pH50(metal, extractant, C_ext, temperature, extractant_params)
+    k_eff = get_effective_k(metal, extractant, temperature, extractant_params)
 
     # 시그모이드 함수
     exponent = -k_eff * (pH - pH50_eff)
@@ -133,7 +151,8 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
 
 def distribution_coefficient(pH: float, metal: str, extractant: str,
                               C_ext: float,
-                              temperature: float = None) -> float:
+                              temperature: float = None,
+                              extractant_params: dict = None) -> float:
     """
     분배 계수 D를 계산합니다.
 
@@ -155,7 +174,7 @@ def distribution_coefficient(pH: float, metal: str, extractant: str,
     float
         분배 계수 D
     """
-    E = extraction_efficiency(pH, metal, extractant, C_ext, temperature)
+    E = extraction_efficiency(pH, metal, extractant, C_ext, temperature, extractant_params)
 
     if E >= 99.99:
         return 1e6
@@ -168,7 +187,8 @@ def distribution_coefficient(pH: float, metal: str, extractant: str,
 
 
 def calc_loading_fraction(C_org: dict, extractant: str, C_ext: float,
-                          metals: list = None) -> float:
+                          metals: list = None,
+                          extractant_params: dict = None) -> float:
     """
     유기상의 현재 로딩률을 계산합니다.
 
@@ -199,7 +219,7 @@ def calc_loading_fraction(C_org: dict, extractant: str, C_ext: float,
         if C_org_m <= 0:
             continue
         MW = MOLAR_MASS[metal]
-        n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+        n_ext = _get_metal_params(metal, extractant, extractant_params).get("n_ext", 2)
         # 금속 몰 농도 (mol/L) × 추출제 화학양론
         total_ext_consumed += n_ext * (C_org_m / MW)
 
@@ -250,7 +270,8 @@ def loading_damping_factor(loading_fraction: float) -> float:
 # =========================================================================
 
 def calc_free_NaL(pH: float, C_ext: float, extractant: str,
-                  C_org: dict = None, metals: list = None) -> float:
+                  C_org: dict = None, metals: list = None,
+                  extractant_params: dict = None) -> float:
     """
     유기상의 자유 사포닌화 추출제 농도 [NaL]_free를 계산합니다.
     사포닌화 계산 시 ESI 모델 대신 화학양론비(n_ext)를 사용하여 근사합니다.
@@ -268,7 +289,7 @@ def calc_free_NaL(pH: float, C_ext: float, extractant: str,
     consumed = 0.0
     if C_org and metals:
         for metal in metals:
-            n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+            n_ext = _get_metal_params(metal, extractant, extractant_params).get("n_ext", 2)
             C_M_org_gL = C_org.get(metal, 0.0)
             MW = MOLAR_MASS.get(metal, 1.0)
             C_M_org_mol = C_M_org_gL / MW
@@ -294,6 +315,7 @@ def compute_competitive_extractions(
     metals: list = None,
     temperature: float = None,
     Q_aq_eff: float = None,
+    extractant_params: dict = None,
 ) -> dict:
     """
     추출제 경쟁을 반영한 분배 계수 및 추출 결과를 계산합니다.
@@ -332,6 +354,7 @@ def compute_competitive_extractions(
         metals = DEFAULT_METALS
     if Q_aq_eff is None:
         Q_aq_eff = Q_aq
+    params_store = _resolve_extractant_params(extractant_params)
 
     # 추출 우선순위: pH₅₀가 낮은 금속 먼저
     priority = EXTRACTION_PRIORITY.get(extractant, metals)
@@ -357,7 +380,7 @@ def compute_competitive_extractions(
             C_org_m = C_org_in.get(m, 0.0)
             if C_org_m > 0:
                 mol_m = C_org_m / MOLAR_MASS[m]
-                n_ext_m = EXTRACTANT_PARAMS[extractant][m].get("n_ext", 2)
+                n_ext_m = params_store[extractant][m].get("n_ext", 2)
                 weighted_n_ext += n_ext_m * (mol_m / total_M_org_in_mol)
         weighted_n_ext = max(weighted_n_ext, 1.0)
     else:
@@ -378,7 +401,7 @@ def compute_competitive_extractions(
         C_org_m = C_org_in.get(m, 0.0)
         if C_org_m > 0:
             MW = MOLAR_MASS[m]
-            n_ext = EXTRACTANT_PARAMS[extractant][m].get("n_ext", 2)
+            n_ext = params_store[extractant][m].get("n_ext", 2)
             n_eff = n_ext * n_eff_multiplier
             ext_consumed += n_eff * (C_org_m / MW)
 
@@ -391,12 +414,13 @@ def compute_competitive_extractions(
 
     for metal in ordered_metals:
         MW = MOLAR_MASS[metal]
-        n_ext = EXTRACTANT_PARAMS[extractant][metal].get("n_ext", 2)
+        n_ext = params_store[extractant][metal].get("n_ext", 2)
         n_eff = n_ext * n_eff_multiplier
 
         # 시그모이드 기반 D
         D_sigmoid = distribution_coefficient(
-            pH, metal, extractant, C_ext, temperature=temperature
+            pH, metal, extractant, C_ext, temperature=temperature,
+            extractant_params=params_store
         )
 
         # 잔여 추출제 비율로 보정
@@ -447,7 +471,8 @@ def compute_competitive_extractions(
     }
 
 
-def get_proton_release(metal: str, extractant: str) -> int:
+def get_proton_release(metal: str, extractant: str,
+                       extractant_params: dict = None) -> int:
     """
     금속 1몰 추출 시 방출되는 H⁺ 몰수를 반환합니다.
 
@@ -461,12 +486,13 @@ def get_proton_release(metal: str, extractant: str) -> int:
     int
         H⁺ 방출 몰수 (n_H)
     """
-    return EXTRACTANT_PARAMS[extractant][metal]["n_H"]
+    return _get_metal_params(metal, extractant, extractant_params)["n_H"]
 
 
 def compute_all_extractions(pH: float, extractant: str, C_ext: float,
                              metals: list = None,
-                             temperature: float = None) -> dict:
+                             temperature: float = None,
+                             extractant_params: dict = None) -> dict:
     """
     주어진 pH와 온도에서 모든 금속의 추출률을 한 번에 계산합니다.
 
@@ -488,13 +514,16 @@ def compute_all_extractions(pH: float, extractant: str, C_ext: float,
 
     results = {}
     for metal in metals:
-        results[metal] = extraction_efficiency(pH, metal, extractant, C_ext, temperature)
+        results[metal] = extraction_efficiency(
+            pH, metal, extractant, C_ext, temperature, extractant_params
+        )
     return results
 
 
 def print_isotherm_table(extractant: str, C_ext: float,
                           pH_range: tuple = (1.0, 10.0), pH_step: float = 0.5,
-                          metals: list = None, temperature: float = None):
+                          metals: list = None, temperature: float = None,
+                          extractant_params: dict = None):
     """
     pH 범위에 대한 추출률 테이블을 출력합니다.
 
@@ -522,7 +551,9 @@ def print_isotherm_table(extractant: str, C_ext: float,
     while pH <= pH_range[1] + 0.001:
         row = f"{pH:6.1f}"
         for metal in metals:
-            E = extraction_efficiency(pH, metal, extractant, C_ext, temperature)
+            E = extraction_efficiency(
+                pH, metal, extractant, C_ext, temperature, extractant_params
+            )
             row += f"{E:10.2f}"
         print(row)
         pH += pH_step
