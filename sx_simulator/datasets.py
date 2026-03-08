@@ -9,6 +9,13 @@ import copy
 
 from .config import MOLAR_MASS
 
+DEFAULT_ASSUMED_NAOH_CONCENTRATION_M = 5.0
+
+VALIDATION_BASES = (
+    "legacy_premixed_target_pH",
+    "raw_feed_target_pH",
+)
+
 
 FIELD_DATASETS = {
     "Data1 (CoSX-D9-data)": {
@@ -134,3 +141,90 @@ def calc_sulfate_from_feed(feed: dict) -> float:
         + feed["Mg"] / MOLAR_MASS["Mg"]
         + feed["Zn"] / MOLAR_MASS["Zn"]
     )
+
+
+def dilute_feed_by_flow(feed: dict, inlet_flow: float, outlet_flow: float) -> dict:
+    """보존 성분 농도를 유량 증가에 맞춰 희석 환산합니다."""
+    if inlet_flow <= 0 or outlet_flow <= 0:
+        return {metal: 0.0 for metal in feed}
+    factor = inlet_flow / outlet_flow
+    return {metal: conc * factor for metal, conc in feed.items()}
+
+
+def prepare_verification_case(
+    case: dict,
+    basis: str = "legacy_premixed_target_pH",
+    assumed_naoh_concentration_m: float | None = None,
+) -> dict:
+    """검증 데이터 한 건을 지정한 basis 기준의 엔진 입력으로 변환합니다."""
+    if basis not in VALIDATION_BASES:
+        raise ValueError(f"Unknown verification basis: {basis}")
+
+    assumed_naoh_m = (
+        assumed_naoh_concentration_m
+        if assumed_naoh_concentration_m is not None
+        else case.get(
+            "assumed_naoh_concentration_m",
+            DEFAULT_ASSUMED_NAOH_CONCENTRATION_M,
+        )
+    )
+
+    prepared = {
+        "name": case["name"],
+        "basis": basis,
+        "dataset_tag": case["name"].split()[0],
+        "input_original": copy.deepcopy(case["input"]),
+        "expected_output": copy.deepcopy(case["output"]),
+        "listed_naoh_flow_l_hr": case["naoh_flow"],
+        "assumed_naoh_concentration_m": assumed_naoh_m,
+        "sim_kwargs": {},
+    }
+
+    if basis == "legacy_premixed_target_pH":
+        q_aq = case["feed_flow"] + case["naoh_flow"]
+        c_aq_feed = dilute_feed_by_flow(case["input"], case["feed_flow"], q_aq)
+        sulfate = calc_sulfate_from_feed(c_aq_feed)
+        prepared.update(
+            {
+                "input_model_basis": c_aq_feed,
+                "dilution_factor": case["feed_flow"] / q_aq,
+                "sulfate_m": sulfate,
+                "sim_kwargs": {
+                    "C_aq_feed": c_aq_feed,
+                    "pH_feed": case["pH"],
+                    "Q_aq": q_aq,
+                    "Q_org": case["org_flow"],
+                    "extractant": case["ext"],
+                    "C_ext": case["C_ext"],
+                    "n_stages": case["n_stages"],
+                    "temperature": case["T"],
+                    "C_sulfate": sulfate,
+                    "target_pH": case["pH"],
+                },
+            }
+        )
+        return prepared
+
+    c_aq_feed = copy.deepcopy(case["input"])
+    sulfate = calc_sulfate_from_feed(c_aq_feed)
+    prepared.update(
+        {
+            "input_model_basis": c_aq_feed,
+            "dilution_factor": 1.0,
+            "sulfate_m": sulfate,
+            "sim_kwargs": {
+                "C_aq_feed": c_aq_feed,
+                "pH_feed": case["pH"],
+                "Q_aq": case["feed_flow"],
+                "Q_org": case["org_flow"],
+                "extractant": case["ext"],
+                "C_ext": case["C_ext"],
+                "n_stages": case["n_stages"],
+                "temperature": case["T"],
+                "C_sulfate": sulfate,
+                "target_pH": case["pH"],
+                "C_NaOH": assumed_naoh_m,
+            },
+        }
+    )
+    return prepared

@@ -230,6 +230,17 @@ def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float, C_aq: dict = None,
     return (free_H + bound_H + hydrolysis_H) * Q_aq
 
 
+def dilute_concentration_by_flow(
+    concentration: float,
+    inlet_flow: float,
+    outlet_flow: float,
+) -> float:
+    """보존 성분 농도를 유량 변화에 따라 희석 환산합니다."""
+    if concentration <= 0.0 or inlet_flow <= 0.0 or outlet_flow <= 0.0:
+        return 0.0
+    return concentration * inlet_flow / outlet_flow
+
+
 def _estimate_saponification_oh_consumption(
     pH: float,
     C_ext: float,
@@ -251,7 +262,8 @@ def _estimate_target_pH_naoh_consumption(
     target_pH: float,
     Q_aq_in: float,
     Q_aq_out: float,
-    C_sulfate: float,
+    C_sulfate_in: float,
+    C_sulfate_out: float,
     C_aq_in: dict,
     C_aq_out: dict,
     C_org_out: dict,
@@ -269,10 +281,10 @@ def _estimate_target_pH_naoh_consumption(
     )
 
     total_H_in = calc_aq_protons(
-        pH_in, Q_aq_in, C_sulfate, C_aq_in, use_speciation
+        pH_in, Q_aq_in, C_sulfate_in, C_aq_in, use_speciation
     )
     total_H_out_target = calc_aq_protons(
-        target_pH, Q_aq_out, C_sulfate, C_aq_out, use_speciation
+        target_pH, Q_aq_out, C_sulfate_out, C_aq_out, use_speciation
     )
 
     if target_pH > 7.0:
@@ -304,10 +316,12 @@ def _solve_target_pH_stage_equilibrium(
     extractant_params: dict = None,
 ) -> dict:
     """지정된 목표 pH와 출구 수계 유량에서 단일 stage 평형을 계산합니다."""
+    C_sulfate_eq = dilute_concentration_by_flow(C_sulfate, Q_aq_in, Q_aq_out)
+
     if use_competition:
         stage_state = _solve_competitive_stage_state(
             target_pH, C_aq_in, C_org_in, Q_aq_in, Q_aq_out, Q_org,
-            extractant, C_ext, metals, temperature, C_sulfate,
+            extractant, C_ext, metals, temperature, C_sulfate_eq,
             use_speciation, extractant_params
         )
         return {
@@ -317,6 +331,7 @@ def _solve_target_pH_stage_equilibrium(
             "H_released_mol_hr": stage_state["H_released_mol_hr"],
             "loading_fraction": stage_state["loading_fraction"],
             "inner_iterations": 1,
+            "C_sulfate_out_M": C_sulfate_eq,
         }
 
     max_loading_iter = 30
@@ -328,7 +343,7 @@ def _solve_target_pH_stage_equilibrium(
         stage_state = _partition_stage_with_damping(
             target_pH, C_aq_in, C_org_in, Q_aq_in, Q_aq_out, Q_org,
             extractant, C_ext, metals, temperature, damping,
-            C_sulfate, use_speciation, extractant_params
+            C_sulfate_eq, use_speciation, extractant_params
         )
         C_org_out = stage_state["C_org_out"]
 
@@ -351,6 +366,7 @@ def _solve_target_pH_stage_equilibrium(
         "H_released_mol_hr": stage_state["H_released_mol_hr"],
         "loading_fraction": final_loading,
         "inner_iterations": load_iter + 1,
+        "C_sulfate_out_M": C_sulfate_eq,
     }
 
 
@@ -379,8 +395,9 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             extractant, C_ext, metals, temperature, C_sulfate,
             use_competition, use_speciation, extractant_params
         )
+        C_sulfate_out = stage_state["C_sulfate_out_M"]
         NaOH_consumed, _ = _estimate_target_pH_naoh_consumption(
-            pH_in, target_pH, Q_aq, Q_aq, C_sulfate,
+            pH_in, target_pH, Q_aq, Q_aq, C_sulfate, C_sulfate_out,
             C_aq_in, stage_state["C_aq_out"], stage_state["C_org_out"],
             stage_state["H_released_mol_hr"], extractant, C_ext, metals,
             Q_org, use_speciation, extractant_params
@@ -395,8 +412,9 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                 extractant, C_ext, metals, temperature, C_sulfate,
                 use_competition, use_speciation, extractant_params
             )
+            C_sulfate_out = stage_state["C_sulfate_out_M"]
             NaOH_consumed, _ = _estimate_target_pH_naoh_consumption(
-                pH_in, target_pH, Q_aq, Q_aq_out, C_sulfate,
+                pH_in, target_pH, Q_aq, Q_aq_out, C_sulfate, C_sulfate_out,
                 C_aq_in, stage_state["C_aq_out"], stage_state["C_org_out"],
                 stage_state["H_released_mol_hr"], extractant, C_ext, metals,
                 Q_org, use_speciation, extractant_params
@@ -418,8 +436,9 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                 extractant, C_ext, metals, temperature, C_sulfate,
                 use_competition, use_speciation, extractant_params
             )
+            C_sulfate_out = stage_state["C_sulfate_out_M"]
             NaOH_consumed, _ = _estimate_target_pH_naoh_consumption(
-                pH_in, target_pH, Q_aq, Q_aq_out, C_sulfate,
+                pH_in, target_pH, Q_aq, Q_aq_out, C_sulfate, C_sulfate_out,
                 C_aq_in, stage_state["C_aq_out"], stage_state["C_org_out"],
                 stage_state["H_released_mol_hr"], extractant, C_ext, metals,
                 Q_org, use_speciation, extractant_params
@@ -438,6 +457,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
     total_H_released = stage_state["H_released_mol_hr"]
     final_loading = stage_state["loading_fraction"]
     Q_aq_out = Q_aq + q_naoh_estimated if not legacy_mode else Q_aq
+    C_sulfate_out = stage_state["C_sulfate_out_M"]
 
     return {
         "C_aq_out": C_aq_out,
@@ -448,6 +468,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         "NaOH_consumed_mol_hr": NaOH_consumed,
         "Q_NaOH_estimated_L_hr": q_naoh_estimated,
         "Q_aq_out_L_hr": Q_aq_out,
+        "C_sulfate_out_M": C_sulfate_out,
         "loading_fraction": final_loading,
         "iterations": stage_state["inner_iterations"],
         "dilution_iterations": dilution_iterations,
@@ -468,6 +489,7 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
     extraction = {}
     total_H_released = 0.0
     Q_aq_eff = Q_aq + Q_NaOH
+    C_sulfate_eff = dilute_concentration_by_flow(C_sulfate, Q_aq, Q_aq_eff)
 
     pH_low = -1.0
     pH_high = 14.0
@@ -482,7 +504,7 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         if use_competition:
             stage_state = _solve_competitive_stage_state(
                 pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                extractant, C_ext, metals, temperature, C_sulfate,
+                extractant, C_ext, metals, temperature, C_sulfate_eff,
                 use_speciation, extractant_params
             )
             C_aq_out = stage_state["C_aq_out"]
@@ -496,7 +518,7 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                 trial_state = _partition_stage_with_damping(
                     pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
                     extractant, C_ext, metals, temperature, damping,
-                    C_sulfate, use_speciation, extractant_params
+                    C_sulfate_eff, use_speciation, extractant_params
                 )
                 new_loading = calc_loading_fraction(
                     trial_state["C_org_out"], extractant, C_ext, metals, extractant_params
@@ -511,7 +533,7 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             stage_state = _partition_stage_with_damping(
                 pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
                 extractant, C_ext, metals, temperature, damping,
-                C_sulfate, use_speciation, extractant_params
+                C_sulfate_eff, use_speciation, extractant_params
             )
             C_aq_out = stage_state["C_aq_out"]
             C_org_out = stage_state["C_org_out"]
@@ -529,7 +551,9 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
 
         H_out_balance = total_H_in + total_H_released - OH_effective
         
-        H_out_actual = calc_aq_protons(pH_current, Q_aq_eff, C_sulfate, C_aq_out, use_speciation)
+        H_out_actual = calc_aq_protons(
+            pH_current, Q_aq_eff, C_sulfate_eff, C_aq_out, use_speciation
+        )
         if pH_current > 7.0:
             H_out_actual -= Q_aq_eff * (10.0 ** -(14.0 - pH_current))
             
@@ -554,6 +578,8 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         "extraction": extraction,
         "H_released_mol_hr": total_H_released,
         "NaOH_consumed_mol_hr": C_NaOH * Q_NaOH,
+        "Q_aq_out_L_hr": Q_aq_eff,
+        "C_sulfate_out_M": C_sulfate_eff,
         "loading_fraction": final_loading,
         "iterations": iteration + 1,
     }
