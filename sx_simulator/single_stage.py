@@ -20,6 +20,7 @@ from .extraction_isotherm import (
     calc_free_NaL,
     compute_competitive_extractions,
     get_aqueous_speciation_state,
+    get_sulfate_d_correction_factor,
 )
 from .config import (MOLAR_MASS, DEFAULT_METALS,
                      SPECIATION_CONSTANTS)
@@ -37,6 +38,8 @@ def _partition_stage_with_damping(
     metals: list,
     temperature: float,
     damping: float,
+    C_sulfate: float = 0.0,
+    use_speciation: bool = False,
     extractant_params: dict = None,
 ) -> dict:
     """고정된 damping 값으로 금속 분배와 H+ 방출량을 계산합니다."""
@@ -50,6 +53,10 @@ def _partition_stage_with_damping(
             pH, metal, extractant, C_ext, temperature=temperature,
             extractant_params=extractant_params
         )
+        if use_speciation:
+            D_raw *= get_sulfate_d_correction_factor(
+                metal, extractant, pH, C_sulfate
+            )
         D = D_raw * damping
         MW = MOLAR_MASS[metal]
 
@@ -92,12 +99,15 @@ def _solve_competitive_stage_state(
     C_ext: float,
     metals: list,
     temperature: float,
+    C_sulfate: float = 0.0,
+    use_speciation: bool = False,
     extractant_params: dict = None,
 ) -> dict:
     """경쟁 추출 모드의 단일 stage 평형 상태를 계산합니다."""
     result = compute_competitive_extractions(
         pH, extractant, C_ext, C_aq_in, C_org_in,
         Q_aq_in, Q_org, metals, temperature, Q_aq_eff=Q_aq_out,
+        C_sulfate=C_sulfate, use_speciation=use_speciation,
         extractant_params=extractant_params
     )
 
@@ -242,7 +252,8 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
     if use_competition:
         stage_state = _solve_competitive_stage_state(
             target_pH, C_aq_in, C_org_in, Q_aq, Q_aq, Q_org,
-            extractant, C_ext, metals, temperature, extractant_params
+            extractant, C_ext, metals, temperature, C_sulfate,
+            use_speciation, extractant_params
         )
         C_aq_out = stage_state["C_aq_out"]
         C_org_out = stage_state["C_org_out"]
@@ -259,7 +270,8 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         for load_iter in range(max_loading_iter):
             stage_state = _partition_stage_with_damping(
                 target_pH, C_aq_in, C_org_in, Q_aq, Q_aq, Q_org,
-                extractant, C_ext, metals, temperature, damping, extractant_params
+                extractant, C_ext, metals, temperature, damping,
+                C_sulfate, use_speciation, extractant_params
             )
             C_aq_out = stage_state["C_aq_out"]
             C_org_out = stage_state["C_org_out"]
@@ -335,7 +347,8 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         if use_competition:
             stage_state = _solve_competitive_stage_state(
                 pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                extractant, C_ext, metals, temperature, extractant_params
+                extractant, C_ext, metals, temperature, C_sulfate,
+                use_speciation, extractant_params
             )
             C_aq_out = stage_state["C_aq_out"]
             C_org_out = stage_state["C_org_out"]
@@ -347,7 +360,8 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             for _load_iter in range(15):
                 trial_state = _partition_stage_with_damping(
                     pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                    extractant, C_ext, metals, temperature, damping, extractant_params
+                    extractant, C_ext, metals, temperature, damping,
+                    C_sulfate, use_speciation, extractant_params
                 )
                 new_loading = calc_loading_fraction(
                     trial_state["C_org_out"], extractant, C_ext, metals, extractant_params
@@ -361,7 +375,8 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             # 확정된 damping으로 최종 계산
             stage_state = _partition_stage_with_damping(
                 pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                extractant, C_ext, metals, temperature, damping, extractant_params
+                extractant, C_ext, metals, temperature, damping,
+                C_sulfate, use_speciation, extractant_params
             )
             C_aq_out = stage_state["C_aq_out"]
             C_org_out = stage_state["C_org_out"]

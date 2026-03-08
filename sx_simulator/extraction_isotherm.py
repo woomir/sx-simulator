@@ -18,7 +18,11 @@ pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 
 import math
 from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
                      T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION,
-                     EXTRACTION_PRIORITY, SPECIATION_CONSTANTS)
+                     EXTRACTION_PRIORITY, SPECIATION_CONSTANTS,
+                     FREE_METAL_CORRECTION_REFERENCE_SULFATE_M,
+                     FREE_METAL_CORRECTION_MIN,
+                     FREE_METAL_CORRECTION_MAX,
+                     SULFATE_D_CORRECTION_RULES)
 
 
 def _resolve_extractant_params(extractant_params: dict = None) -> dict:
@@ -323,6 +327,58 @@ def get_aqueous_speciation_state(
     }
 
 
+def get_relative_free_metal_factor(
+    metal: str,
+    pH: float,
+    C_sulfate: float,
+    reference_sulfate: float = FREE_METAL_CORRECTION_REFERENCE_SULFATE_M,
+) -> float:
+    """
+    기준 황산염 농도 대비 현재 자유 금속 분율의 상대 보정 계수를 반환합니다.
+
+    현재 pH50는 현장 보정값을 포함하므로, sulfate speciation은 절대 보정이 아니라
+    reference sulfate 조건에 대한 상대 보정으로만 적용합니다.
+    """
+    if metal not in SPECIATION_CONSTANTS:
+        return 1.0
+    if C_sulfate <= 0 or reference_sulfate <= 0:
+        return 1.0
+
+    current_state = get_aqueous_speciation_state(metal, pH, C_sulfate)
+    reference_state = get_aqueous_speciation_state(metal, pH, reference_sulfate)
+
+    free_ref = reference_state["free_metal_fraction"]
+    if free_ref <= 0:
+        return 1.0
+
+    raw_factor = current_state["free_metal_fraction"] / free_ref
+    return max(
+        FREE_METAL_CORRECTION_MIN,
+        min(FREE_METAL_CORRECTION_MAX, raw_factor),
+    )
+
+
+def get_sulfate_d_correction_factor(
+    metal: str,
+    extractant: str,
+    pH: float,
+    C_sulfate: float,
+) -> float:
+    """
+    sulfate speciation을 추출 D에 반영하는 선택적 상대 보정 계수를 반환합니다.
+
+    현재 현장 검증 기준으로 효과가 확인된 조합만 보정하며, 나머지 금속은
+    기존 pH50 기반 경험식을 유지합니다.
+    """
+    rule = SULFATE_D_CORRECTION_RULES.get((extractant, metal))
+    if rule is None or C_sulfate <= 0:
+        return 1.0
+
+    raw_factor = get_relative_free_metal_factor(metal, pH, C_sulfate)
+    corrected = raw_factor ** rule.get("power", 1.0)
+    return max(rule.get("min", 0.0), min(rule.get("max", 1.0), corrected))
+
+
 # =========================================================================
 # ESI 모델 함수 (Lu et al., 2024)
 # =========================================================================
@@ -373,6 +429,8 @@ def compute_competitive_extractions(
     metals: list = None,
     temperature: float = None,
     Q_aq_eff: float = None,
+    C_sulfate: float = 0.0,
+    use_speciation: bool = False,
     extractant_params: dict = None,
 ) -> dict:
     """
@@ -480,6 +538,10 @@ def compute_competitive_extractions(
             pH, metal, extractant, C_ext, temperature=temperature,
             extractant_params=params_store
         )
+        if use_speciation:
+            D_sigmoid *= get_sulfate_d_correction_factor(
+                metal, extractant, pH, C_sulfate
+            )
 
         # 잔여 추출제 비율로 보정
         if C_ext > 0 and HA_free > 0:

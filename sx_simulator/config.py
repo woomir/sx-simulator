@@ -356,6 +356,20 @@ SPECIATION_CONSTANTS = {
     "Ca": {"K_MOH": 10**(1.43), "K_MSO4": 10**(0.36)},   # β₁/Kw: 10^(-12.57)/10^(-14) = 10^1.43
 }
 
+# 자유 금속 기반 sulfate 보정은 현재 pH50 현장 보정을 보조하는 상대 보정으로만 사용합니다.
+# 기준 황산염 농도(typical field sulfate)에서의 자유 금속 분율 대비 현재 분율의
+# 비율을 사용하고, 먼저 기준 상대계수를 계산한 뒤 extractant/metal별로 선택 적용합니다.
+FREE_METAL_CORRECTION_REFERENCE_SULFATE_M = 1.0
+FREE_METAL_CORRECTION_MIN = 0.75
+FREE_METAL_CORRECTION_MAX = 1.15
+
+# 현재는 D2EHPA-Co 조합에만 강화된 sulfate 상대 보정을 적용합니다.
+# raw_factor = relative_free_metal_factor
+# correction = clamp(raw_factor ** power, min, max)
+SULFATE_D_CORRECTION_RULES = {
+    ("D2EHPA", "Co"): {"power": 4.0, "min": 0.2, "max": 1.0},
+}
+
 # =============================================================================
 # 현장 검증 범위 (Data1~6 기준)
 # =============================================================================
