@@ -43,12 +43,15 @@ streamlit run sx_dashboard.py
 ```text
 sx_dashboard.py
   -> sx_simulator/dashboard_service.py
-      -> sx_simulator/dashboard_tabs.py
       -> sx_simulator/multistage_sx.py
           -> sx_simulator/single_stage.py
               -> sx_simulator/extraction_isotherm.py
                   -> sx_simulator/config.py
                   -> sx_simulator/datasets.py
+  -> sx_simulator/dashboard_tabs.py
+      -> sx_simulator/dashboard_service.py
+      -> sx_simulator/extraction_isotherm.py
+      -> sx_simulator/fitting.py
 ```
 
 ### 각 계층의 역할
@@ -69,7 +72,7 @@ sx_dashboard.py
 #### `sx_simulator/dashboard_tabs.py`
 
 - 주요 동적 탭 렌더링 함수 모음
-- 시뮬레이션 결과, Isotherm, McCabe-Thiele, 비교, 상세 데이터 탭 담당
+- 시뮬레이션 결과, 수식, Isotherm, McCabe-Thiele, 비교, 상세 데이터, 피팅 탭 담당
 - 메인 대시보드 파일의 UI 블록을 모듈 단위로 분리
 
 #### `sx_simulator/multistage_sx.py`
@@ -191,6 +194,7 @@ sx_dashboard.py
   - 예: `docs/v2.1.1_3차_리팩토링_기록.md`
   - 예: `docs/v2.1.1_4차_리팩토링_기록.md`
   - 예: `docs/v2.1.1_5차_리팩토링_기록.md`
+  - 예: `docs/v2.1.1_6차_리팩토링_기록.md`
 
 원칙:
 
@@ -213,7 +217,7 @@ sx_dashboard.py
 - 일부 현장 데이터에서 Ni/Co/Li 오차가 남아 있다.
 - 활동도/비이상성은 제한적으로만 반영된다.
 - `test_verification.py`는 자동 실패 기준보다 보고서 출력 비중이 크다.
-- `sx_dashboard.py`는 여전히 큰 파일이며, 탭 렌더러 분리는 앞으로의 과제다.
+- 주요 동적 탭은 분리됐지만, 일부 정적 탭과 파라미터 표 렌더링은 아직 `sx_dashboard.py`에 남아 있다.
 
 ## 9. 앞으로 코드를 볼 때 추천 순서
 
@@ -240,5 +244,6 @@ sx_dashboard.py
 - `docs/v2.1.1_3차_리팩토링_기록.md`
 - `docs/v2.1.1_4차_리팩토링_기록.md`
 - `docs/v2.1.1_5차_리팩토링_기록.md`
+- `docs/v2.1.1_6차_리팩토링_기록.md`
 
 이 문서들을 함께 보면 왜 구조가 바뀌었는지 추적할 수 있다.
