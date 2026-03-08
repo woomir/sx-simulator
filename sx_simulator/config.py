@@ -250,7 +250,8 @@ LITERATURE_BASE_PARAMS = {
 
 SITE_PARAMETER_OVERRIDES = {
     ("Cyanex 272", "Ni"): {
-        "pH50": 6.3,  # 현장 Isd 108 희석제 반영
+        "pH50": 6.55,  # 현장 Data1~3 기준 저 pH Ni 과추출 완화
+        "k": 2.0,      # Data1/2와 Data3 사이 전이 폭 균형화
     },
     ("D2EHPA", "Mg"): {
         "pH50": 3.2,  # 현장 데이터 기반 하향 보정
