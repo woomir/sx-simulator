@@ -14,7 +14,18 @@ DEFAULT_ASSUMED_NAOH_CONCENTRATION_M = 5.0
 VALIDATION_BASES = (
     "legacy_premixed_target_pH",
     "raw_feed_target_pH",
+    "raw_feed_fixed_saponification",
 )
+
+NAOH_DENSITY_TABLE_G_ML = {
+    0.0: 1.000,
+    5.0: 1.053,
+    10.0: 1.109,
+    20.0: 1.219,
+    30.0: 1.328,
+    40.0: 1.430,
+    50.0: 1.525,
+}
 
 LEGACY_REGRESSION_MAE_THRESHOLDS = {
     "Li": 0.90,
@@ -52,11 +63,14 @@ FIELD_DATASETS = {
     "Data1 (CoSX-D9-data)": {
         "ext": "Cyanex 272",
         "C_ext": 0.6308,
+        "pH_feed": 3.0,
         "pH": 6.10,
         "n_stages": 5,
         "T": 25.0,
         "feed_flow": 25.0,
         "naoh_flow": 11.0,
+        "naoh_wt_pct": 10.0,
+        "naoh_mode": "saponification",
         "org_flow": 118.0,
         "input": {"Li": 5.283, "Ni": 33.894, "Co": 3.096, "Mn": 0.067, "Ca": 0.002, "Mg": 0.026, "Zn": 0.0},
         "output": {"Li": 3.322, "Ni": 7.166, "Co": 0.001, "Mn": 0.0, "Ca": 0.0, "Mg": 0.0, "Zn": 0.0},
@@ -64,11 +78,14 @@ FIELD_DATASETS = {
     "Data2 (CoSX-D5-data)": {
         "ext": "Cyanex 272",
         "C_ext": 0.6308,
+        "pH_feed": 3.0,
         "pH": 5.89,
         "n_stages": 5,
         "T": 25.0,
         "feed_flow": 25.0,
         "naoh_flow": 9.4,
+        "naoh_wt_pct": 10.0,
+        "naoh_mode": "saponification",
         "org_flow": 118.0,
         "input": {"Li": 5.260, "Ni": 33.876, "Co": 3.053, "Mn": 0.071, "Ca": 0.001, "Mg": 0.030, "Zn": 0.0},
         "output": {"Li": 3.478, "Ni": 8.951, "Co": 0.0, "Mn": 0.0, "Ca": 0.0, "Mg": 0.0, "Zn": 0.0},
@@ -76,11 +93,14 @@ FIELD_DATASETS = {
     "Data3 (CoSX-D2-data)": {
         "ext": "Cyanex 272",
         "C_ext": 0.6308,
+        "pH_feed": 3.0,
         "pH": 7.00,
         "n_stages": 5,
         "T": 25.0,
         "feed_flow": 20.0,
         "naoh_flow": 9.4,
+        "naoh_wt_pct": 10.0,
+        "naoh_mode": "saponification",
         "org_flow": 118.0,
         "input": {"Li": 5.852, "Ni": 28.476, "Co": 4.106, "Mn": 0.091, "Ca": 0.002, "Mg": 0.035, "Zn": 0.0},
         "output": {"Li": 3.151, "Ni": 0.044, "Co": 0.0, "Mn": 0.0, "Ca": 0.0, "Mg": 0.0, "Zn": 0.0},
@@ -88,11 +108,14 @@ FIELD_DATASETS = {
     "Data4 (IMSX-D5-Data)": {
         "ext": "D2EHPA",
         "C_ext": 0.6053,
+        "pH_feed": 3.0,
         "pH": 4.00,
         "n_stages": 5,
         "T": 25.0,
         "feed_flow": 30.0,
         "naoh_flow": 4.2,
+        "naoh_wt_pct": 30.0,
+        "naoh_mode": "saponification",
         "org_flow": 124.0,
         "input": {"Li": 9.767, "Ni": 28.889, "Co": 16.178, "Mn": 15.204, "Ca": 0.336, "Mg": 0.149, "Zn": 0.006},
         "output": {"Li": 6.335, "Ni": 18.186, "Co": 0.230, "Mn": 0.0, "Ca": 0.0, "Mg": 0.001, "Zn": 0.0},
@@ -100,11 +123,14 @@ FIELD_DATASETS = {
     "Data5 (IMSX-D9-Data)": {
         "ext": "D2EHPA",
         "C_ext": 0.6053,
+        "pH_feed": 3.5,
         "pH": 4.20,
         "n_stages": 5,
         "T": 25.0,
         "feed_flow": 25.0,
         "naoh_flow": 3.2,
+        "naoh_wt_pct": 30.0,
+        "naoh_mode": "saponification",
         "org_flow": 100.0,
         "input": {"Li": 0.013, "Ni": 71.000, "Co": 8.700, "Mn": 8.900, "Ca": 0.250, "Mg": 3.000, "Zn": 0.600},
         "output": {"Li": 5.400, "Ni": 16.000, "Co": 0.160, "Mn": 0.0, "Ca": 0.0, "Mg": 0.0, "Zn": 0.0},
@@ -112,11 +138,14 @@ FIELD_DATASETS = {
     "Data6 (IMSX-D?)": {
         "ext": "D2EHPA",
         "C_ext": 0.6053,
+        "pH_feed": 3.5,
         "pH": 3.90,
         "n_stages": 5,
         "T": 25.0,
         "feed_flow": 30.0,
         "naoh_flow": 3.5,
+        "naoh_wt_pct": 30.0,
+        "naoh_mode": "saponification",
         "org_flow": 100.0,
         "input": {"Li": 8.390, "Ni": 27.917, "Co": 15.400, "Mn": 12.883, "Ca": 0.413, "Mg": 0.129, "Zn": 0.012},
         "output": {"Li": 6.591, "Ni": 21.034, "Co": 0.848, "Mn": 0.0, "Ca": 0.003, "Mg": 0.0, "Zn": 0.0},
@@ -182,6 +211,32 @@ def dilute_feed_by_flow(feed: dict, inlet_flow: float, outlet_flow: float) -> di
     return {metal: conc * factor for metal, conc in feed.items()}
 
 
+def estimate_naoh_density_g_ml_from_wt_pct(wt_pct: float) -> float:
+    """NaOH wt%에서 상온 근사 밀도(g/mL)를 선형 보간으로 추정합니다."""
+    if wt_pct <= 0:
+        return NAOH_DENSITY_TABLE_G_ML[0.0]
+
+    known_points = sorted(NAOH_DENSITY_TABLE_G_ML.items())
+    if wt_pct <= known_points[0][0]:
+        return known_points[0][1]
+    if wt_pct >= known_points[-1][0]:
+        return known_points[-1][1]
+
+    for (x0, y0), (x1, y1) in zip(known_points, known_points[1:]):
+        if x0 <= wt_pct <= x1:
+            ratio = (wt_pct - x0) / (x1 - x0)
+            return y0 + ratio * (y1 - y0)
+
+    return known_points[-1][1]
+
+
+def estimate_naoh_molarity_from_wt_pct(wt_pct: float) -> float:
+    """NaOH wt%에서 상온 근사 몰농도(M)를 계산합니다."""
+    density = estimate_naoh_density_g_ml_from_wt_pct(wt_pct)
+    naoh_g_per_l = density * 1000.0 * (wt_pct / 100.0)
+    return naoh_g_per_l / 40.0
+
+
 def prepare_verification_case(
     case: dict,
     basis: str = "legacy_premixed_target_pH",
@@ -196,7 +251,9 @@ def prepare_verification_case(
         if assumed_naoh_concentration_m is not None
         else case.get(
             "assumed_naoh_concentration_m",
-            DEFAULT_ASSUMED_NAOH_CONCENTRATION_M,
+            estimate_naoh_molarity_from_wt_pct(case.get("naoh_wt_pct", 0.0))
+            if case.get("naoh_wt_pct") is not None
+            else DEFAULT_ASSUMED_NAOH_CONCENTRATION_M,
         )
     )
 
@@ -206,8 +263,12 @@ def prepare_verification_case(
         "dataset_tag": case["name"].split()[0],
         "input_original": copy.deepcopy(case["input"]),
         "expected_output": copy.deepcopy(case["output"]),
+        "expected_pH_out": case["pH"],
+        "input_pH": case.get("pH_feed", case["pH"]),
         "listed_naoh_flow_l_hr": case["naoh_flow"],
         "assumed_naoh_concentration_m": assumed_naoh_m,
+        "naoh_wt_pct": case.get("naoh_wt_pct"),
+        "naoh_mode": case.get("naoh_mode", "aqueous_direct"),
         "sim_kwargs": {},
     }
 
@@ -236,6 +297,32 @@ def prepare_verification_case(
         )
         return prepared
 
+    if basis == "raw_feed_fixed_saponification":
+        c_aq_feed = copy.deepcopy(case["input"])
+        sulfate = calc_sulfate_from_feed(c_aq_feed)
+        prepared.update(
+            {
+                "input_model_basis": c_aq_feed,
+                "dilution_factor": 1.0,
+                "sulfate_m": sulfate,
+                "sim_kwargs": {
+                    "C_aq_feed": c_aq_feed,
+                    "pH_feed": case.get("pH_feed", case["pH"]),
+                    "Q_aq": case["feed_flow"],
+                    "Q_org": case["org_flow"],
+                    "extractant": case["ext"],
+                    "C_ext": case["C_ext"],
+                    "n_stages": case["n_stages"],
+                    "temperature": case["T"],
+                    "C_sulfate": sulfate,
+                    "C_NaOH": assumed_naoh_m,
+                    "Q_NaOH": case["naoh_flow"],
+                    "naoh_mode": case.get("naoh_mode", "saponification"),
+                },
+            }
+        )
+        return prepared
+
     c_aq_feed = copy.deepcopy(case["input"])
     sulfate = calc_sulfate_from_feed(c_aq_feed)
     prepared.update(
@@ -245,7 +332,7 @@ def prepare_verification_case(
             "sulfate_m": sulfate,
             "sim_kwargs": {
                 "C_aq_feed": c_aq_feed,
-                "pH_feed": case["pH"],
+                "pH_feed": case.get("pH_feed", case["pH"]),
                 "Q_aq": case["feed_flow"],
                 "Q_org": case["org_flow"],
                 "extractant": case["ext"],
@@ -255,6 +342,7 @@ def prepare_verification_case(
                 "C_sulfate": sulfate,
                 "target_pH": case["pH"],
                 "C_NaOH": assumed_naoh_m,
+                "naoh_mode": case.get("naoh_mode", "aqueous_direct"),
             },
         }
     )

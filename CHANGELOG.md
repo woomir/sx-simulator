@@ -4,6 +4,38 @@
 
 형식: [Semantic Versioning](https://semver.org/lang/ko/)
 
+## [v2.1.2] - 2026-03-11
+
+### 🧪 Raw-feed / 사포니피케이션 해석 정비
+
+- **현장 데이터 메타데이터 확장**:
+  - Data1~6에 `pH_feed`, `naoh_wt_pct`, `naoh_mode="saponification"` 메타데이터를 반영했습니다.
+  - `raw_feed_fixed_saponification` 검증 기준을 추가하고, `wt% → M` 환산 helper를 도입했습니다.
+- **고정 NaOH + 사포니피케이션 경로 재설계**:
+  - `fixed_saponification`을 더 이상 수계 직접 OH 주입으로 해석하지 않고, **fresh organic의 sap condition**으로 해석하도록 변경했습니다.
+  - 현장 raw-feed replay 안정성을 위해 sap condition을 **equivalent cascade target pH**로 환산하는 field-calibrated fallback을 추가했습니다.
+- **사포니피케이션 반영 범위 확대**:
+  - `naoh_mode`, `saponification_fraction`이 single-stage / multistage / isotherm 경로를 통해 실제 D 및 H⁺ release 계산에 연결되도록 정비했습니다.
+  - D2EHPA 고황산염 구간에 대한 `Li/Ni/Co` sulfate D correction rule을 refine하고, legacy regression이 유지되도록 적용 범위를 조정했습니다.
+
+### 🖥️ UI 및 해석 가이드 개선
+
+- **NaOH 적용 방식 UI 추가**:
+  - `수계 직접 투입`과 `사포니피케이션`을 구분해서 선택할 수 있게 했습니다.
+  - 사포니피케이션 선택 시 `wt%` 입력과 환산 M 표시를 제공합니다.
+- **현장 replay 해석 문구 보강**:
+  - 고정 NaOH + 사포니피케이션 모드가 raw-feed 기준 equivalent target pH fallback을 사용한다는 안내를 추가했습니다.
+  - 검증 범위 안내에서 수계 직접 희석과 사포니피케이션 해석을 구분해서 설명합니다.
+
+### ✅ 검증 결과
+
+- `validation_test.py` PASS
+- `test_verification.py` legacy regression PASS 유지
+- `raw_feed_fixed_saponification` 진단 성능 개선:
+  - Li MAE `4.568 → 1.655`
+  - Ni MAE `11.897 → 1.207`
+  - Co MAE `0.206 → 0.206` (유지)
+
 ## [v2.1.1] - 2026-03-07
 
 ### 🧭 검증 투명성 및 해석 가이드 강화

@@ -11,8 +11,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 버전 정보 명시 (문서 및 캐시 관리에 활용 가능)
-APP_VERSION = "2.1.1"
-LAST_UPDATED = "2026-03-07"
+APP_VERSION = "2.1.2"
+LAST_UPDATED = "2026-03-11"
 # CHANGELOG 읽기
 _changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
 try:
@@ -47,6 +47,7 @@ from sx_simulator.datasets import (
     DASHBOARD_PRESETS as PRESETS,
     KNOWN_PRESET_NOTES,
     calc_sulfate_from_feed,
+    estimate_naoh_molarity_from_wt_pct,
 )
 
 # =============================================================================
@@ -133,24 +134,31 @@ def apply_preset():
     sel = st.session_state.preset_sel
     if sel == "사용자 직접 입력": return
     d = PRESETS[sel]
-    # 희석 효과 반영하여 Feed 농도 입력 (BM Feed와 NaOH 수용액의 합산 유량 기준)
-    dilution = d['feed_flow'] / (d['feed_flow'] + d['naoh_flow'])
-    st.session_state.ui_C_Li = float(d['input']['Li'] * dilution)
-    st.session_state.ui_C_Ni = float(d['input']['Ni'] * dilution)
-    st.session_state.ui_C_Co = float(d['input']['Co'] * dilution)
-    st.session_state.ui_C_Mn = float(d['input']['Mn'] * dilution)
-    st.session_state.ui_C_Ca = float(d['input']['Ca'] * dilution)
-    st.session_state.ui_C_Mg = float(d['input']['Mg'] * dilution)
-    st.session_state.ui_C_Zn = float(d['input']['Zn'] * dilution)
-    
-    st.session_state.ui_Q_aq = float(d['feed_flow'] + d['naoh_flow'])
+    st.session_state.ui_C_Li = float(d['input']['Li'])
+    st.session_state.ui_C_Ni = float(d['input']['Ni'])
+    st.session_state.ui_C_Co = float(d['input']['Co'])
+    st.session_state.ui_C_Mn = float(d['input']['Mn'])
+    st.session_state.ui_C_Ca = float(d['input']['Ca'])
+    st.session_state.ui_C_Mg = float(d['input']['Mg'])
+    st.session_state.ui_C_Zn = float(d['input']['Zn'])
+
+    st.session_state.ui_pH_feed = float(d.get('pH_feed', d['pH']))
+    st.session_state.ui_Q_aq = float(d['feed_flow'])
     st.session_state.ui_Q_org = float(d['org_flow'])
     st.session_state.ui_extractant = d['ext']
     st.session_state.ui_C_ext = d['C_ext']
     st.session_state.ui_target_pH = d['pH']
     st.session_state.ui_n_stages = d['n_stages']
     st.session_state.ui_temperature = d['T']
-    st.session_state.ui_pH_mode = "목표 pH (자동 NaOH)"
+    st.session_state.ui_pH_mode = "고정 NaOH"
+    st.session_state.ui_naoh_mode_label = "사포니피케이션"
+    st.session_state.ui_naoh_basis = "wt%"
+    st.session_state.ui_NaOH_wt_pct = float(d.get("naoh_wt_pct", 10.0))
+    st.session_state.ui_C_NaOH = float(
+        estimate_naoh_molarity_from_wt_pct(d.get("naoh_wt_pct", 10.0))
+    )
+    st.session_state.ui_Q_NaOH = float(d.get("naoh_flow", 0.0))
+    st.session_state.ui_enable_target_pH_dilution = False
 
 # =============================================================================
 # 사이드바: 입력 파라미터
@@ -202,7 +210,7 @@ C_Ca = st.sidebar.number_input("Ca 농도 (g/L)", 0.0, 50.0, 0.0, 0.1, key="ui_C
 C_Mg = st.sidebar.number_input("Mg 농도 (g/L)", 0.0, 50.0, 0.0, 0.1, key="ui_C_Mg")
 C_Zn = st.sidebar.number_input("Zn 농도 (g/L)", 0.0, 50.0, 0.0, 0.1, key="ui_C_Zn")
 
-pH_feed = st.sidebar.number_input("Feed pH", 0.0, 14.0, 3.0, 0.1)
+pH_feed = st.sidebar.number_input("Feed pH", 0.0, 14.0, 3.0, 0.1, key="ui_pH_feed")
 Q_aq = st.sidebar.number_input("Feed 수계 유량 (L/hr)", 1.0, 10000.0, 100.0, 10.0, key="ui_Q_aq")
 
 # 총 황산염 농도 — Feed 금속 황산염 조성으로부터 자동 계산
@@ -223,25 +231,100 @@ st.sidebar.markdown("---")
 # --- NaOH 조건 ---
 st.sidebar.header("🧪 pH 제어 (NaOH)")
 pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode", help="'목표 pH' 모드를 적극 권장합니다. 시뮬레이터가 원하는 산도에 도달하기 위한 최적 알칼리 투입량을 역산합니다.")
+naoh_mode_label = st.sidebar.selectbox(
+    "NaOH 적용 방식",
+    ["수계 직접 투입", "사포니피케이션"],
+    key="ui_naoh_mode_label",
+    help="현장처럼 유기상 사포니피케이션으로 준비된 용매를 해석할지, 수계에 NaOH 용액을 직접 넣는 것으로 해석할지 선택합니다.",
+)
+naoh_mode = "saponification" if naoh_mode_label == "사포니피케이션" else "aqueous_direct"
 C_NaOH = 0.0
 Q_NaOH = 0.0
+naoh_wt_pct = None
 
 if pH_mode == "목표 pH (자동 NaOH)":
     target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
     use_staged_pH = st.sidebar.checkbox("Stage별 차등 pH", value=False)
-    enable_target_pH_dilution = st.sidebar.checkbox(
-        "NaOH 희석 self-consistent 추정",
-        value=False,
-        help="활성화 시 목표 pH 달성에 필요한 NaOH 유량을 역산하고, 가정한 NaOH 농도 기준으로 수계 희석 효과까지 함께 계산합니다. 현장 프리셋은 기존 검증과의 일관성을 위해 기본 OFF를 권장합니다.",
-    )
-    if enable_target_pH_dilution:
-        C_NaOH = st.sidebar.number_input(
-            "NaOH 농도 (M, 희석 추정용)", 0.1, 20.0, 5.0, 0.5
+    if naoh_mode == "saponification":
+        naoh_basis = st.sidebar.selectbox(
+            "사포니피케이션 농도 입력",
+            ["wt%", "M"],
+            key="ui_naoh_basis",
         )
+        if naoh_basis == "wt%":
+            naoh_wt_pct = st.sidebar.number_input(
+                "NaOH 농도 (wt%)", 1.0, 50.0, 10.0, 1.0, key="ui_NaOH_wt_pct"
+            )
+            C_NaOH = estimate_naoh_molarity_from_wt_pct(naoh_wt_pct)
+            st.sidebar.caption(f"환산 농도: 약 {C_NaOH:.2f} M")
+        else:
+            C_NaOH = st.sidebar.number_input(
+                "NaOH 농도 (M, 사포니피케이션 환산용)",
+                0.1,
+                20.0,
+                float(st.session_state.get("ui_C_NaOH", 5.0)),
+                0.5,
+                key="ui_C_NaOH",
+            )
+        Q_NaOH = st.sidebar.number_input(
+            "사포니피케이션 NaOH 유량 (L/hr, 선택)",
+            0.0,
+            500.0,
+            float(st.session_state.get("ui_Q_NaOH", 0.0)),
+            0.1,
+            key="ui_Q_NaOH",
+            help="0이면 목표 pH 달성에 필요한 사포니피케이션 등가량을 역산합니다. 현장 replay 용도라면 실제 유량을 입력하세요.",
+        )
+        enable_target_pH_dilution = False
+    else:
+        enable_target_pH_dilution = st.sidebar.checkbox(
+            "NaOH 희석 self-consistent 추정",
+            value=st.session_state.get("ui_enable_target_pH_dilution", False),
+            key="ui_enable_target_pH_dilution",
+            help="활성화 시 목표 pH 달성에 필요한 NaOH 유량을 역산하고, 가정한 NaOH 농도 기준으로 수계 희석 효과까지 함께 계산합니다. 현장 프리셋은 기존 검증과의 일관성을 위해 기본 OFF를 권장합니다.",
+        )
+        if enable_target_pH_dilution:
+            C_NaOH = st.sidebar.number_input(
+                "NaOH 농도 (M, 희석 추정용)", 0.1, 20.0, 5.0, 0.5, key="ui_C_NaOH"
+            )
 else:
     target_pH = None
-    C_NaOH = st.sidebar.number_input("NaOH 농도 (M)", 0.1, 20.0, 5.0, 0.5)
-    Q_NaOH = st.sidebar.number_input("총 NaOH 유량 (L/hr)", 0.0, 500.0, 12.0, 1.0)
+    if naoh_mode == "saponification":
+        naoh_basis = st.sidebar.selectbox(
+            "사포니피케이션 농도 입력",
+            ["wt%", "M"],
+            key="ui_naoh_basis",
+        )
+        if naoh_basis == "wt%":
+            naoh_wt_pct = st.sidebar.number_input(
+                "NaOH 농도 (wt%)", 1.0, 50.0, 10.0, 1.0, key="ui_NaOH_wt_pct"
+            )
+            C_NaOH = estimate_naoh_molarity_from_wt_pct(naoh_wt_pct)
+            st.sidebar.caption(f"환산 농도: 약 {C_NaOH:.2f} M")
+        else:
+            C_NaOH = st.sidebar.number_input(
+                "NaOH 농도 (M, 사포니피케이션 환산용)",
+                0.1,
+                20.0,
+                float(st.session_state.get("ui_C_NaOH", 5.0)),
+                0.5,
+                key="ui_C_NaOH",
+            )
+        Q_NaOH = st.sidebar.number_input(
+            "사포니피케이션 NaOH 유량 (L/hr)",
+            0.0,
+            500.0,
+            float(st.session_state.get("ui_Q_NaOH", 12.0)),
+            0.1,
+            key="ui_Q_NaOH",
+        )
+        st.sidebar.caption(
+            "고정 NaOH + 사포니피케이션은 입력 NaOH 조건을 raw-feed 기준 fresh organic sap 상태로 해석한 뒤, "
+            "field-calibrated equivalent target pH fallback으로 계산합니다."
+        )
+    else:
+        C_NaOH = st.sidebar.number_input("NaOH 농도 (M)", 0.1, 20.0, 5.0, 0.5, key="ui_C_NaOH")
+        Q_NaOH = st.sidebar.number_input("총 NaOH 유량 (L/hr)", 0.0, 500.0, 12.0, 1.0, key="ui_Q_NaOH")
 
 st.sidebar.markdown("---")
 
@@ -347,7 +430,9 @@ simulation_inputs = SimulationInputs(
     target_pH=target_pH,
     staged_pHs=staged_pHs,
     C_NaOH=C_NaOH,
-    Q_NaOH=Q_NaOH if pH_mode == "고정 NaOH" else 0.0,
+    Q_NaOH=Q_NaOH,
+    naoh_mode=naoh_mode,
+    naoh_wt_pct=naoh_wt_pct,
     naoh_strategy=naoh_strategy,
     naoh_weights=naoh_weights,
     metals=tuple(metals),

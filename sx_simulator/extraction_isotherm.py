@@ -22,7 +22,10 @@ from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
                      FREE_METAL_CORRECTION_REFERENCE_SULFATE_M,
                      FREE_METAL_CORRECTION_MIN,
                      FREE_METAL_CORRECTION_MAX,
-                     SULFATE_D_CORRECTION_RULES)
+                     SULFATE_D_CORRECTION_RULES,
+                     SAPONIFICATION_MAX_FRACTION,
+                     SAPONIFICATION_ORGANIC_PKA,
+                     SAPONIFICATION_P_H50_SHIFT)
 
 
 def _resolve_extractant_params(extractant_params: dict = None) -> dict:
@@ -111,8 +114,51 @@ def get_effective_k(metal: str, extractant: str,
     return k_eff
 
 
+def clamp_saponification_fraction(saponification_fraction: float | None) -> float:
+    """사포니피케이션 분율을 모델 허용 범위로 제한합니다."""
+    if saponification_fraction is None:
+        return 0.0
+    return max(0.0, min(SAPONIFICATION_MAX_FRACTION, saponification_fraction))
+
+
+def get_equilibrium_saponified_fraction(
+    pH: float,
+    extractant: str,
+) -> float:
+    """
+    주어진 pH에서 자유 추출제 site 중 Na-form으로 남는 평형 분율을 반환합니다.
+
+    NaL/HL = 10^(pH - pKa_org) 근사를 사용합니다.
+    """
+    pka = SAPONIFICATION_ORGANIC_PKA.get(extractant)
+    if pka is None:
+        return 0.0
+
+    ratio = 10.0 ** (pH - pka)
+    return ratio / (1.0 + ratio)
+
+
+def get_saponification_pH50_shift(
+    metal: str,
+    extractant: str,
+    saponification_fraction: float = 0.0,
+) -> float:
+    """sap fraction에 따른 pH50 이동량을 반환합니다."""
+    sap_fraction = clamp_saponification_fraction(saponification_fraction)
+    if sap_fraction <= 0.0:
+        return 0.0
+
+    shift_config = SAPONIFICATION_P_H50_SHIFT.get(extractant, {})
+    shift_per_fraction = shift_config.get(
+        metal,
+        shift_config.get("default", 0.0),
+    )
+    return shift_per_fraction * sap_fraction
+
+
 def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
                           temperature: float = None,
+                          saponification_fraction: float = 0.0,
                           extractant_params: dict = None) -> float:
     """
     주어진 pH와 온도에서 특정 금속의 추출률(%)을 계산합니다.
@@ -139,6 +185,11 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     E_max = params["E_max"]
 
     pH50_eff = get_effective_pH50(metal, extractant, C_ext, temperature, extractant_params)
+    pH50_eff -= get_saponification_pH50_shift(
+        metal,
+        extractant,
+        saponification_fraction,
+    )
     k_eff = get_effective_k(metal, extractant, temperature, extractant_params)
 
     # 시그모이드 함수
@@ -156,6 +207,7 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
 def distribution_coefficient(pH: float, metal: str, extractant: str,
                               C_ext: float,
                               temperature: float = None,
+                              saponification_fraction: float = 0.0,
                               extractant_params: dict = None) -> float:
     """
     분배 계수 D를 계산합니다.
@@ -178,7 +230,11 @@ def distribution_coefficient(pH: float, metal: str, extractant: str,
     float
         분배 계수 D
     """
-    E = extraction_efficiency(pH, metal, extractant, C_ext, temperature, extractant_params)
+    E = extraction_efficiency(
+        pH, metal, extractant, C_ext, temperature,
+        saponification_fraction=saponification_fraction,
+        extractant_params=extractant_params,
+    )
 
     if E >= 99.99:
         return 1e6
@@ -373,6 +429,8 @@ def get_sulfate_d_correction_factor(
     rule = SULFATE_D_CORRECTION_RULES.get((extractant, metal))
     if rule is None or C_sulfate <= 0:
         return 1.0
+    if C_sulfate < rule.get("start_m", 0.0):
+        return 1.0
 
     raw_factor = get_relative_free_metal_factor(metal, pH, C_sulfate)
     corrected = raw_factor ** rule.get("power", 1.0)
@@ -431,6 +489,7 @@ def compute_competitive_extractions(
     Q_aq_eff: float = None,
     C_sulfate: float = 0.0,
     use_speciation: bool = False,
+    saponification_fraction: float = 0.0,
     extractant_params: dict = None,
 ) -> dict:
     """
@@ -536,6 +595,7 @@ def compute_competitive_extractions(
         # 시그모이드 기반 D
         D_sigmoid = distribution_coefficient(
             pH, metal, extractant, C_ext, temperature=temperature,
+            saponification_fraction=saponification_fraction,
             extractant_params=params_store
         )
         if use_speciation:
@@ -592,6 +652,7 @@ def compute_competitive_extractions(
 
 
 def get_proton_release(metal: str, extractant: str,
+                       saponification_fraction: float = 0.0,
                        extractant_params: dict = None) -> int:
     """
     금속 1몰 추출 시 방출되는 H⁺ 몰수를 반환합니다.
@@ -606,7 +667,9 @@ def get_proton_release(metal: str, extractant: str,
     int
         H⁺ 방출 몰수 (n_H)
     """
-    return _get_metal_params(metal, extractant, extractant_params)["n_H"]
+    base_n_h = _get_metal_params(metal, extractant, extractant_params)["n_H"]
+    sap_fraction = clamp_saponification_fraction(saponification_fraction)
+    return base_n_h * (1.0 - sap_fraction)
 
 
 def compute_all_extractions(pH: float, extractant: str, C_ext: float,
@@ -635,7 +698,12 @@ def compute_all_extractions(pH: float, extractant: str, C_ext: float,
     results = {}
     for metal in metals:
         results[metal] = extraction_efficiency(
-            pH, metal, extractant, C_ext, temperature, extractant_params
+            pH,
+            metal,
+            extractant,
+            C_ext,
+            temperature=temperature,
+            extractant_params=extractant_params,
         )
     return results
 
@@ -672,7 +740,12 @@ def print_isotherm_table(extractant: str, C_ext: float,
         row = f"{pH:6.1f}"
         for metal in metals:
             E = extraction_efficiency(
-                pH, metal, extractant, C_ext, temperature, extractant_params
+                pH,
+                metal,
+                extractant,
+                C_ext,
+                temperature=temperature,
+                extractant_params=extractant_params,
             )
             row += f"{E:10.2f}"
         print(row)

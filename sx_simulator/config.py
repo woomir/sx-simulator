@@ -337,6 +337,69 @@ EXTRACTION_PRIORITY = {
 }
 
 # =============================================================================
+# 사포니피케이션 근사 설정
+# =============================================================================
+# 현장에서는 NaOH가 수계 직접 주입이 아니라 pre-saponified organic 준비에 쓰이므로,
+# 유기상 자유 추출제의 Na-form 평형과 pH50 이동을 별도 근사합니다.
+SAPONIFICATION_MAX_FRACTION = 0.95
+
+# 자유 추출제(미로딩 site) 중 Na-form으로 남는 평형 분율을 계산할 때 사용하는
+# apparent organic pKa. Cyanex 272 값은 기존 calc_free_NaL 근사와 정합되게 맞춥니다.
+SAPONIFICATION_ORGANIC_PKA = {
+    "Cyanex 272": 7.1149,
+    "D2EHPA": 5.1000,
+}
+
+# 사포니피케이션으로 준비된 유기상이 자유산을 직접 중화하는 정도는
+# 금속 교환보다 제한적이므로, direct neutralization은 부분 접근성으로 감쇠합니다.
+SAPONIFICATION_DIRECT_NEUTRALIZATION_FACTOR = {
+    "Cyanex 272": 0.25,
+    "D2EHPA": 0.15,
+}
+
+# 현장 raw-feed fixed-saponification 데이터를 기준으로, sap condition을
+# 등가 cascade target pH로 환산하는 간이 회귀식입니다.
+SAPONIFICATION_EQUIVALENT_TARGET_PH_COEFFS = {
+    "Cyanex 272": {
+        "intercept": 1.90000000,
+        "sap_acid_ratio": 0.0,
+        "oa_ratio": 0.84745763,
+        "max_pH": 7.2,
+    },
+    "D2EHPA": {
+        "intercept": -7.60855021,
+        "sap_acid_ratio": 0.14088917,
+        "oa_ratio": 2.57995412,
+        "max_pH": 6.5,
+    },
+}
+
+# sap fraction이 높아질수록 같은 pH에서 추출이 쉬워지는 효과를 pH50 shift로 근사합니다.
+# shift = coefficient * saponification_fraction
+SAPONIFICATION_P_H50_SHIFT = {
+    "Cyanex 272": {
+        "default": 0.35,
+        "Li": 0.40,
+        "Ni": 0.65,
+        "Co": 0.40,
+        "Mn": 0.30,
+        "Ca": 0.30,
+        "Mg": 0.30,
+        "Zn": 0.20,
+    },
+    "D2EHPA": {
+        "default": 0.30,
+        "Li": 0.70,
+        "Ni": 0.40,
+        "Co": 0.35,
+        "Mn": 0.25,
+        "Ca": 0.30,
+        "Mg": 0.25,
+        "Zn": 0.20,
+    },
+}
+
+# =============================================================================
 # 수계 종분화 평형 상수 (Phase 3 — Aqueous Speciation)
 # =============================================================================
 # M²⁺ + OH⁻ ⇌ MOH⁺   (K_MOH = [MOH⁺] / ([M²⁺]·[OH⁻]))
@@ -368,7 +431,9 @@ FREE_METAL_CORRECTION_MAX = 1.15
 # raw_factor = relative_free_metal_factor
 # correction = clamp(raw_factor ** power, min, max)
 SULFATE_D_CORRECTION_RULES = {
-    ("D2EHPA", "Co"): {"power": 4.0, "min": 0.2, "max": 1.0},
+    ("D2EHPA", "Co"): {"power": 4.0, "min": 0.2, "max": 1.0, "start_m": 0.0},
+    ("D2EHPA", "Ni"): {"power": 2.5, "min": 0.35, "max": 1.0, "start_m": 1.55},
+    ("D2EHPA", "Li"): {"power": 1.75, "min": 0.55, "max": 1.0, "start_m": 1.55},
 }
 
 # =============================================================================
