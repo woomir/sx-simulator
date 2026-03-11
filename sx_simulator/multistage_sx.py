@@ -17,7 +17,13 @@ from .single_stage import (
     estimate_saponified_extractant_mol_flow,
     solve_single_stage,
 )
-from .config import DEFAULT_METALS, CONVERGENCE_TOLERANCE, MAX_ITERATIONS
+from .config import (
+    DEFAULT_METALS,
+    CONVERGENCE_TOLERANCE,
+    MAX_ITERATIONS,
+    CONVERGENCE_TRACE_ORGANIC_ABS_TOL_G_L,
+    CONVERGENCE_SAP_ABS_TOL_MOL_HR,
+)
 
 
 def _clone_org_profile(org_profile: list, metals: list) -> list:
@@ -110,13 +116,23 @@ def _compute_max_relative_diff(
     max_diff = 0.0
     for stage_idx in range(len(current_org_out)):
         for metal in metals:
-            ref_val = max(abs(previous_org_out[stage_idx].get(metal, 0.0)), 1e-10)
-            diff = abs(current_org_out[stage_idx][metal] - previous_org_out[stage_idx][metal]) / ref_val
+            current_value = current_org_out[stage_idx][metal]
+            previous_value = previous_org_out[stage_idx].get(metal, 0.0)
+            abs_diff = abs(current_value - previous_value)
+            if abs_diff <= CONVERGENCE_TRACE_ORGANIC_ABS_TOL_G_L:
+                continue
+            ref_val = max(abs(previous_value), abs(current_value), 1e-10)
+            diff = abs_diff / ref_val
             if diff > max_diff:
                 max_diff = diff
         if current_sap_out is not None and previous_sap_out is not None:
-            ref_val = max(abs(previous_sap_out[stage_idx]), 1e-10)
-            diff = abs(current_sap_out[stage_idx] - previous_sap_out[stage_idx]) / ref_val
+            current_value = current_sap_out[stage_idx]
+            previous_value = previous_sap_out[stage_idx]
+            abs_diff = abs(current_value - previous_value)
+            if abs_diff <= CONVERGENCE_SAP_ABS_TOL_MOL_HR:
+                continue
+            ref_val = max(abs(previous_value), abs(current_value), 1e-10)
+            diff = abs_diff / ref_val
             if diff > max_diff:
                 max_diff = diff
     return max_diff

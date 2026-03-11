@@ -27,7 +27,8 @@ from .extraction_isotherm import (
 from .config import (MOLAR_MASS, DEFAULT_METALS,
                      SPECIATION_CONSTANTS,
                      SAPONIFICATION_DIRECT_NEUTRALIZATION_FACTOR,
-                     SAPONIFICATION_EQUIVALENT_TARGET_PH_COEFFS)
+                     SAPONIFICATION_EQUIVALENT_TARGET_PH_COEFFS,
+                     SAPONIFIED_LOADED_ORGANIC_RETENTION_FLOOR)
 
 
 def _partition_stage_with_damping(
@@ -90,12 +91,106 @@ def _partition_stage_with_damping(
         )
         total_H_released += n_H * max(0.0, metal_extracted)
 
-    return {
+    stage_state = {
         "C_aq_out": C_aq_out,
         "C_org_out": C_org_out,
         "extraction": extraction,
         "H_released_mol_hr": total_H_released,
     }
+    return _apply_saponified_loaded_organic_retention(
+        stage_state,
+        C_aq_in,
+        C_org_in,
+        Q_aq_in,
+        Q_aq_out,
+        Q_org,
+        extractant,
+        C_ext,
+        metals,
+        saponification_fraction,
+        extractant_params,
+    )
+
+
+def _apply_saponified_loaded_organic_retention(
+    stage_state: dict,
+    C_aq_in: dict,
+    C_org_in: dict,
+    Q_aq_in: float,
+    Q_aq_out: float,
+    Q_org: float,
+    extractant: str,
+    C_ext: float,
+    metals: list,
+    saponification_fraction: float,
+    extractant_params: dict = None,
+) -> dict:
+    """sap-conditioned loaded organic의 과도한 back-extraction을 완화합니다."""
+    if saponification_fraction <= 0.0 or Q_aq_out <= 0.0 or Q_org <= 0.0:
+        return stage_state
+
+    adjusted = False
+    for metal in metals:
+        retention_floor = SAPONIFIED_LOADED_ORGANIC_RETENTION_FLOOR.get(
+            (extractant, metal)
+        )
+        if retention_floor is None or retention_floor <= 0.0:
+            continue
+
+        MW = MOLAR_MASS[metal]
+        C_org_mol_in = C_org_in.get(metal, 0.0) / MW
+        if C_org_mol_in <= 0.0:
+            continue
+
+        retained_org_mol_out = C_org_mol_in * retention_floor
+        C_org_mol_out = stage_state["C_org_out"].get(metal, 0.0) / MW
+        if C_org_mol_out >= retained_org_mol_out:
+            continue
+
+        C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
+        total_metal_flow = C_aq_mol_in * Q_aq_in + C_org_mol_in * Q_org
+        C_aq_mol_out = max(
+            0.0,
+            (total_metal_flow - retained_org_mol_out * Q_org) / Q_aq_out,
+        )
+        stage_state["C_org_out"][metal] = retained_org_mol_out * MW
+        stage_state["C_aq_out"][metal] = C_aq_mol_out * MW
+        metal_extracted = C_aq_mol_in * Q_aq_in - C_aq_mol_out * Q_aq_out
+        if C_aq_mol_in > 0.0:
+            stage_state["extraction"][metal] = max(
+                0.0,
+                metal_extracted / (C_aq_mol_in * Q_aq_in) * 100.0,
+            )
+        else:
+            stage_state["extraction"][metal] = 0.0
+        adjusted = True
+
+    if not adjusted:
+        return stage_state
+
+    total_H_released = 0.0
+    for metal in metals:
+        MW = MOLAR_MASS[metal]
+        C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
+        C_aq_mol_out = stage_state["C_aq_out"].get(metal, 0.0) / MW
+        metal_extracted = max(0.0, C_aq_mol_in * Q_aq_in - C_aq_mol_out * Q_aq_out)
+        n_H = get_proton_release(
+            metal,
+            extractant,
+            saponification_fraction=saponification_fraction,
+            extractant_params=extractant_params,
+        )
+        total_H_released += n_H * metal_extracted
+
+    stage_state["H_released_mol_hr"] = total_H_released
+    stage_state["loading_fraction"] = calc_loading_fraction(
+        stage_state["C_org_out"],
+        extractant,
+        C_ext,
+        metals,
+        extractant_params,
+    )
+    return stage_state
 
 
 def _solve_competitive_stage_state(
@@ -136,7 +231,7 @@ def _solve_competitive_stage_state(
         )
         total_H_released += n_H * max(0.0, metal_extracted)
 
-    return {
+    stage_state = {
         "C_aq_out": result["C_aq_out"],
         "C_org_out": result["C_org_out"],
         "extraction": result["extraction"],
@@ -145,6 +240,19 @@ def _solve_competitive_stage_state(
             result["C_org_out"], extractant, C_ext, metals, extractant_params
         ),
     }
+    return _apply_saponified_loaded_organic_retention(
+        stage_state,
+        C_aq_in,
+        C_org_in,
+        Q_aq_in,
+        Q_aq_out,
+        Q_org,
+        extractant,
+        C_ext,
+        metals,
+        saponification_fraction,
+        extractant_params,
+    )
 
 
 def solve_single_stage(

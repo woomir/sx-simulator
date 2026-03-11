@@ -327,6 +327,9 @@ DEFAULT_AO_RATIO = 1.0      # A/O = 1:1
 # 수렴 관련 설정 (다단 역류 시뮬레이션용)
 CONVERGENCE_TOLERANCE = 1e-6
 MAX_ITERATIONS = 500
+# trace loaded-organic / sap inventory의 미세 limit-cycle은 수렴 판정에서 제외
+CONVERGENCE_TRACE_ORGANIC_ABS_TOL_G_L = 2e-5
+CONVERGENCE_SAP_ABS_TOL_MOL_HR = 2e-4
 
 # 추출제 로딩 한계 설정
 MAX_LOADING_FRACTION = 0.95   # 최대 로딩률 (추출제 용량의 95%까지 사용 가능)
@@ -364,7 +367,7 @@ SAPONIFICATION_ORGANIC_PKA = {
 # 금속 교환보다 제한적이므로, direct neutralization은 부분 접근성으로 감쇠합니다.
 SAPONIFICATION_DIRECT_NEUTRALIZATION_FACTOR = {
     "Cyanex 272": 0.25,
-    "D2EHPA": 0.15,
+    "D2EHPA": 0.46,
 }
 
 # 현장 raw-feed fixed-saponification 데이터를 기준으로, sap condition을
@@ -400,13 +403,23 @@ SAPONIFICATION_P_H50_SHIFT = {
     "D2EHPA": {
         "default": 0.30,
         "Li": 0.70,
-        "Ni": 0.40,
-        "Co": 0.35,
+        # D2EHPA sap-conditioned organic은 Co/Ni에 대해 free-acid 상태보다
+        # 더 강한 apparent extraction drive를 보여 물리 경로에서 추가 shift를 줍니다.
+        "Ni": 1.40,
+        "Co": 1.40,
         "Mn": 0.25,
         "Ca": 0.30,
         "Mg": 0.25,
         "Zn": 0.20,
     },
+}
+
+# sap-conditioned loaded organic은 단순 bulk equilibrium보다 금속을 더 오래 유지하는 경우가 있어,
+# 특정 조합에는 최소 유기상 retention floor를 적용합니다.
+SAPONIFIED_LOADED_ORGANIC_RETENTION_FLOOR = {
+    ("Cyanex 272", "Ni"): 0.90,
+    ("D2EHPA", "Ni"): 0.90,
+    ("D2EHPA", "Co"): 0.90,
 }
 
 # =============================================================================
