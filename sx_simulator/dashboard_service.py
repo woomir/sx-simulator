@@ -35,6 +35,7 @@ class SimulationInputs:
     Q_NaOH: float = 0.0
     naoh_mode: str = "aqueous_direct"
     naoh_wt_pct: float | None = None
+    saponification_model: str = "physical_v2"
     saponification_fraction: float | None = None
     naoh_strategy: str = "uniform"
     naoh_weights: list[float] | None = None
@@ -61,6 +62,7 @@ def build_simulation_kwargs(
         use_speciation=True,
         extractant_params=extractant_params,
         naoh_mode=inputs.naoh_mode,
+        saponification_model=inputs.saponification_model,
     )
 
     if inputs.saponification_fraction is not None:
@@ -115,6 +117,7 @@ def run_compare_simulations(
             C_NaOH=inputs.C_NaOH,
             naoh_mode=inputs.naoh_mode,
             naoh_wt_pct=inputs.naoh_wt_pct,
+            saponification_model=inputs.saponification_model,
             saponification_fraction=inputs.saponification_fraction,
             metals=inputs.metals,
         )
@@ -208,7 +211,9 @@ def build_scope_assessment(
 
     if inputs.pH_mode == "목표 pH (자동 NaOH)":
         if inputs.naoh_mode == "saponification":
-            highlights.append("NaOH를 수계 직접 중화가 아니라 유기상 사포니피케이션 등가량으로 해석합니다.")
+            highlights.append(
+                "NaOH를 수계 직접 중화가 아니라 fresh organic sap inventory로 해석합니다."
+            )
             if inputs.naoh_wt_pct is not None:
                 highlights.append(
                     f"입력 NaOH 농도는 약 {inputs.naoh_wt_pct:.1f} wt% 기준으로 환산됩니다."
@@ -225,12 +230,17 @@ def build_scope_assessment(
                 "목표 pH 모드는 NaOH 유량을 역산하므로 pH>7 영역에서 실제 희석 효과를 완전 반영하지 못합니다."
             )
     elif inputs.naoh_mode == "saponification":
-        highlights.append(
-            "고정 NaOH + 사포니피케이션은 raw-feed 기준 fresh organic sap condition을 equivalent target pH로 환산해 계산합니다."
-        )
-        cautions.append(
-            "이 경로는 현장 replay 안정성을 위한 field-calibrated fallback입니다. raw-feed 조건과 크게 다르면 정량 예측 오차가 커질 수 있습니다."
-        )
+        if inputs.saponification_model == "legacy_equivalent_target":
+            highlights.append(
+                "고정 NaOH + 사포니피케이션은 raw-feed 기준 fresh organic sap condition을 equivalent target pH로 환산해 계산합니다."
+            )
+            cautions.append(
+                "이 경로는 현장 replay 안정성을 위한 field-calibrated legacy fallback입니다."
+            )
+        else:
+            highlights.append(
+                "고정 NaOH + 사포니피케이션은 fresh organic sap inventory를 stage 간 counter-current로 전달하는 physical v2 경로를 사용합니다."
+            )
 
     if total_naoh_mol_hr > max(25.0, 0.5 * sum(inputs.C_aq_feed.values())):
         highlights.append(

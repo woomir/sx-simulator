@@ -6,35 +6,46 @@
 
 ## [v2.1.2] - 2026-03-11
 
-### 🧪 Raw-feed / 사포니피케이션 해석 정비
+### 🧪 알칼리 인터페이스 정리 및 사포니피케이션 경로 분리
 
-- **현장 데이터 메타데이터 확장**:
-  - Data1~6에 `pH_feed`, `naoh_wt_pct`, `naoh_mode="saponification"` 메타데이터를 반영했습니다.
-  - `raw_feed_fixed_saponification` 검증 기준을 추가하고, `wt% → M` 환산 helper를 도입했습니다.
-- **고정 NaOH + 사포니피케이션 경로 재설계**:
-  - `fixed_saponification`을 더 이상 수계 직접 OH 주입으로 해석하지 않고, **fresh organic의 sap condition**으로 해석하도록 변경했습니다.
-  - 현장 raw-feed replay 안정성을 위해 sap condition을 **equivalent cascade target pH**로 환산하는 field-calibrated fallback을 추가했습니다.
-- **사포니피케이션 반영 범위 확대**:
-  - `naoh_mode`, `saponification_fraction`이 single-stage / multistage / isotherm 경로를 통해 실제 D 및 H⁺ release 계산에 연결되도록 정비했습니다.
-  - D2EHPA 고황산염 구간에 대한 `Li/Ni/Co` sulfate D correction rule을 refine하고, legacy regression이 유지되도록 적용 범위를 조정했습니다.
+- **명시적 알칼리 계약 계층 추가**:
+  - `sx_simulator/alkali_contract.py`를 추가해 `aqueous_direct`와 `fresh_organic_saponification`을 코드 레벨에서 분리했습니다.
+  - 사포니피케이션 경로는 `physical_v2`와 `legacy_equivalent_target`로 명시적으로 구분됩니다.
+- **physical sap cascade 구현**:
+  - 다단 사포니피케이션에서 `fresh sap inventory`가 실제 organic side를 따라 counter-current로 전달되도록 구현했습니다.
+  - stage/cascade 결과에 `saponified_extractant_in/out`, `direct_neutralization`, `metal_exchange`, `inventory_error` 진단값을 추가했습니다.
+- **legacy fallback explicit화**:
+  - `target pH + saponification` 기본 해석은 `raffinate pH target`으로 바꿨고,
+  - 기존 equivalent-target 경로는 명시적으로 켤 때만 쓰는 legacy fallback으로 남겼습니다.
 
-### 🖥️ UI 및 해석 가이드 개선
+### 🖥️ UI 및 서비스 반영
 
-- **NaOH 적용 방식 UI 추가**:
-  - `수계 직접 투입`과 `사포니피케이션`을 구분해서 선택할 수 있게 했습니다.
-  - 사포니피케이션 선택 시 `wt%` 입력과 환산 M 표시를 제공합니다.
-- **현장 replay 해석 문구 보강**:
-  - 고정 NaOH + 사포니피케이션 모드가 raw-feed 기준 equivalent target pH fallback을 사용한다는 안내를 추가했습니다.
-  - 검증 범위 안내에서 수계 직접 희석과 사포니피케이션 해석을 구분해서 설명합니다.
+- 사포니피케이션 + 목표 모드의 기본 라벨을 `후액 목표 pH`로 바꿨습니다.
+- 사포니피케이션에서는 기본 흐름에서 `Stage별 차등 pH`를 제거했습니다.
+- 필요 시에만 `Legacy equivalent-target fallback`을 켤 수 있게 했습니다.
+- 검증 범위 안내 문구도 `physical_v2`와 `legacy fallback`을 구분하도록 수정했습니다.
+
+### 🎯 field-calibrated 파라미터 미세 보정
+
+- `Cyanex 272 / Li`: `pH50 8.00 → 8.10`, `k 2.0 → 1.8`
+- `D2EHPA / Li`: `pH50 6.50 → 6.30`
+- `D2EHPA / Co`: `E_max 99.5 → 99.0`
 
 ### ✅ 검증 결과
 
-- `validation_test.py` PASS
-- `test_verification.py` legacy regression PASS 유지
-- `raw_feed_fixed_saponification` 진단 성능 개선:
-  - Li MAE `4.568 → 1.655`
-  - Ni MAE `11.897 → 1.207`
-  - Co MAE `0.206 → 0.206` (유지)
+- `python3 -m py_compile ...` PASS
+- `python3 test_verification.py` PASS
+- legacy release gate 유지
+  - Li MAE `0.816 → 0.788 g/L`
+  - Co MAE `0.060 → 0.047 g/L`
+- relative error 기준 개선
+  - Cyanex 272 legacy aggregate: `14.2% → 13.8%`
+  - D2EHPA legacy aggregate: `27.1% → 25.3%`
+  - Cyanex 272 raw-feed fixed sap: `23.7% → 23.4%`
+  - D2EHPA raw-feed fixed sap: `51.0% → 50.8%`
+- `raw_feed_physical_saponification_v2`는 구현은 완료됐지만 현 시점 field 기준으로는 experimental/shadow only
+  - Cyanex 272 aggregate relative error: `167.3%`
+  - D2EHPA aggregate relative error: `1686.3%`
 
 ## [v2.1.1] - 2026-03-07
 

@@ -238,14 +238,28 @@ naoh_mode_label = st.sidebar.selectbox(
     help="현장처럼 유기상 사포니피케이션으로 준비된 용매를 해석할지, 수계에 NaOH 용액을 직접 넣는 것으로 해석할지 선택합니다.",
 )
 naoh_mode = "saponification" if naoh_mode_label == "사포니피케이션" else "aqueous_direct"
+saponification_model = "physical_v2"
 C_NaOH = 0.0
 Q_NaOH = 0.0
 naoh_wt_pct = None
+use_staged_pH = False
+
+if naoh_mode == "saponification":
+    use_legacy_saponification_fallback = st.sidebar.checkbox(
+        "Legacy equivalent-target fallback 사용",
+        value=bool(st.session_state.get("ui_use_legacy_saponification_fallback", False)),
+        key="ui_use_legacy_saponification_fallback",
+        help="활성화 시 기존 field-calibrated equivalent target 경로를 사용합니다. 기본값은 physical v2 sap cascade입니다.",
+    )
+    if use_legacy_saponification_fallback:
+        saponification_model = "legacy_equivalent_target"
 
 if pH_mode == "목표 pH (자동 NaOH)":
-    target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
-    use_staged_pH = st.sidebar.checkbox("Stage별 차등 pH", value=False)
     if naoh_mode == "saponification":
+        target_pH = st.sidebar.slider("후액 목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
+        st.sidebar.caption(
+            "fresh organic 사포니피케이션에서는 stage별 pH가 아니라 최종 후액 pH를 목표로 fresh sap inventory를 역산합니다."
+        )
         naoh_basis = st.sidebar.selectbox(
             "사포니피케이션 농도 입력",
             ["wt%", "M"],
@@ -267,16 +281,18 @@ if pH_mode == "목표 pH (자동 NaOH)":
                 key="ui_C_NaOH",
             )
         Q_NaOH = st.sidebar.number_input(
-            "사포니피케이션 NaOH 유량 (L/hr, 선택)",
+            "사포니피케이션 NaOH 유량 힌트 (L/hr, 선택)",
             0.0,
             500.0,
             float(st.session_state.get("ui_Q_NaOH", 0.0)),
             0.1,
             key="ui_Q_NaOH",
-            help="0이면 목표 pH 달성에 필요한 사포니피케이션 등가량을 역산합니다. 현장 replay 용도라면 실제 유량을 입력하세요.",
+            help="0이면 solver가 fresh sap 필요량을 자동 탐색합니다. 양수를 넣으면 탐색 상한/초기 힌트로 사용합니다.",
         )
         enable_target_pH_dilution = False
     else:
+        target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
+        use_staged_pH = st.sidebar.checkbox("Stage별 차등 pH", value=False)
         enable_target_pH_dilution = st.sidebar.checkbox(
             "NaOH 희석 self-consistent 추정",
             value=st.session_state.get("ui_enable_target_pH_dilution", False),
@@ -319,9 +335,12 @@ else:
             key="ui_Q_NaOH",
         )
         st.sidebar.caption(
-            "고정 NaOH + 사포니피케이션은 입력 NaOH 조건을 raw-feed 기준 fresh organic sap 상태로 해석한 뒤, "
-            "field-calibrated equivalent target pH fallback으로 계산합니다."
+            "고정 NaOH + 사포니피케이션은 입력 NaOH 조건을 raw-feed 기준 fresh organic sap 상태로 해석합니다."
         )
+        if saponification_model == "legacy_equivalent_target":
+            st.sidebar.caption("현재 legacy equivalent-target fallback이 활성화되어 있습니다.")
+        else:
+            st.sidebar.caption("현재 physical v2 sap cascade가 활성화되어 있습니다.")
     else:
         C_NaOH = st.sidebar.number_input("NaOH 농도 (M)", 0.1, 20.0, 5.0, 0.5, key="ui_C_NaOH")
         Q_NaOH = st.sidebar.number_input("총 NaOH 유량 (L/hr)", 0.0, 500.0, 12.0, 1.0, key="ui_Q_NaOH")
@@ -433,6 +452,7 @@ simulation_inputs = SimulationInputs(
     Q_NaOH=Q_NaOH,
     naoh_mode=naoh_mode,
     naoh_wt_pct=naoh_wt_pct,
+    saponification_model=saponification_model,
     naoh_strategy=naoh_strategy,
     naoh_weights=naoh_weights,
     metals=tuple(metals),

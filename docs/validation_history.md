@@ -4,6 +4,45 @@
 
 ---
 
+### 📌 [v2.1.2] 2026-03-11 : 알칼리 인터페이스 정리 + Li/Co 잔여오차 미세 보정
+
+#### 1. 알칼리 경로 명시화
+
+- `aqueous_direct`와 `fresh_organic_saponification`을 코드 레벨에서 분리
+- 사포니피케이션 경로를
+  - `physical_v2`
+  - `legacy_equivalent_target`
+  로 명시적으로 구분
+- 다단 사포니피케이션에 대해 `fresh sap inventory`를 실제 counter-current state로 전달하는 physical path를 추가
+
+#### 2. field-calibrated 파라미터 미세 조정
+
+- `Cyanex 272 / Li`
+  - `pH50: 8.00 -> 8.10`
+  - `k: 2.0 -> 1.8`
+- `D2EHPA / Li`
+  - `pH50: 6.50 -> 6.30`
+- `D2EHPA / Co`
+  - `E_max: 99.5 -> 99.0`
+
+#### 3. 검증 결과
+
+- legacy release gate 유지
+  - Li MAE `0.816 -> 0.788 g/L`
+  - Co MAE `0.060 -> 0.047 g/L`
+- relative error 기준 개선
+  - Cyanex 272 legacy aggregate: `14.2% -> 13.8%`
+  - D2EHPA legacy aggregate: `27.1% -> 25.3%`
+  - Cyanex 272 raw-feed fixed sap: `23.7% -> 23.4%`
+  - D2EHPA raw-feed fixed sap: `51.0% -> 50.8%`
+
+#### 4. 해석 주의사항
+
+- `raw_feed_physical_saponification_v2`는 구현은 완료됐지만 아직 field 정확도가 충분하지 않다.
+- 따라서 현재는 **experimental / shadow only**로 유지하고, 공식 release gate는 계속 `legacy_premixed_target_pH`를 사용한다.
+
+---
+
 ### 📌 [v1.9.0] 2026-03-06 : CoSX 및 IMSX 현장 데이터(Data1~6) 기반 피팅
 
 #### 1. Cyanex 272 (Ni 과추출 방지)

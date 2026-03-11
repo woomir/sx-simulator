@@ -15,6 +15,7 @@ VALIDATION_BASES = (
     "legacy_premixed_target_pH",
     "raw_feed_target_pH",
     "raw_feed_fixed_saponification",
+    "raw_feed_physical_saponification_v2",
 )
 
 NAOH_DENSITY_TABLE_G_ML = {
@@ -318,6 +319,34 @@ def prepare_verification_case(
                     "C_NaOH": assumed_naoh_m,
                     "Q_NaOH": case["naoh_flow"],
                     "naoh_mode": case.get("naoh_mode", "saponification"),
+                    "saponification_model": "legacy_equivalent_target",
+                },
+            }
+        )
+        return prepared
+
+    if basis == "raw_feed_physical_saponification_v2":
+        c_aq_feed = copy.deepcopy(case["input"])
+        sulfate = calc_sulfate_from_feed(c_aq_feed)
+        prepared.update(
+            {
+                "input_model_basis": c_aq_feed,
+                "dilution_factor": 1.0,
+                "sulfate_m": sulfate,
+                "sim_kwargs": {
+                    "C_aq_feed": c_aq_feed,
+                    "pH_feed": case.get("pH_feed", case["pH"]),
+                    "Q_aq": case["feed_flow"],
+                    "Q_org": case["org_flow"],
+                    "extractant": case["ext"],
+                    "C_ext": case["C_ext"],
+                    "n_stages": case["n_stages"],
+                    "temperature": case["T"],
+                    "C_sulfate": sulfate,
+                    "C_NaOH": assumed_naoh_m,
+                    "Q_NaOH": case["naoh_flow"],
+                    "naoh_mode": case.get("naoh_mode", "saponification"),
+                    "saponification_model": "physical_v2",
                 },
             }
         )
@@ -343,6 +372,11 @@ def prepare_verification_case(
                 "target_pH": case["pH"],
                 "C_NaOH": assumed_naoh_m,
                 "naoh_mode": case.get("naoh_mode", "aqueous_direct"),
+                "saponification_model": (
+                    "legacy_equivalent_target"
+                    if case.get("naoh_mode", "aqueous_direct") == "saponification"
+                    else "physical_v2"
+                ),
             },
         }
     )

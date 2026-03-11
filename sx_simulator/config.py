@@ -253,6 +253,16 @@ SITE_PARAMETER_OVERRIDES = {
         "pH50": 6.55,  # 현장 Data1~3 기준 저 pH Ni 과추출 완화
         "k": 2.0,      # Data1/2와 Data3 사이 전이 폭 균형화
     },
+    ("Cyanex 272", "Li"): {
+        "pH50": 8.10,  # Data1/2 과소추출과 Data3 과대추출 사이 절충
+        "k": 1.8,
+    },
+    ("D2EHPA", "Li"): {
+        "pH50": 6.3,  # field 기준 Li 잔여오차 완화
+    },
+    ("D2EHPA", "Co"): {
+        "E_max": 99.0,  # trace Co 과추출 완화
+    },
     ("D2EHPA", "Mg"): {
         "pH50": 3.2,  # 현장 데이터 기반 하향 보정
     },

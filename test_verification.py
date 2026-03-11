@@ -15,15 +15,24 @@ from sx_simulator.datasets import (
     prepare_verification_case,
 )
 
+TRACE_EXPECTED_FLOOR_G_L = 0.1
+
 
 def append_unique(items: list[str], message: str) -> None:
     if message not in items:
         items.append(message)
 
 
+def relative_error_pct(simulated: float, experimental: float) -> float | None:
+    if abs(experimental) < TRACE_EXPECTED_FLOOR_G_L:
+        return None
+    return abs(simulated - experimental) / abs(experimental) * 100.0
+
+
 def run_validation_basis(basis: str):
     print(f"=== Verification Basis: {basis} ===")
     overall_errors = {metal: [] for metal in DEFAULT_METALS}
+    overall_relative_errors = {metal: [] for metal in DEFAULT_METALS}
     dataset_metrics = []
     failures = []
 
@@ -41,6 +50,7 @@ def run_validation_basis(basis: str):
             result = solve_multistage_countercurrent(**sim_kwargs)
             res_df = result['raffinate']
             abs_errors = []
+            relative_errors = []
             worst_row = None
             metal_errors = {}
             estimated_naoh_flow = None
@@ -77,14 +87,30 @@ def run_validation_basis(basis: str):
                 abs_errors.append(abs(error))
                 overall_errors[m].append(abs(error))
                 metal_errors[m] = error
+                rel_error = relative_error_pct(sim_out, exp_out)
+                if rel_error is not None:
+                    relative_errors.append(rel_error)
+                    overall_relative_errors[m].append(rel_error)
                 if worst_row is None or abs(error) > abs(worst_row[1]):
                     worst_row = (m, error)
                 print(f"| {m} | {in_orig:.3f} | {in_model_basis:.3f} | {sim_out:.3f} | {exp_out:.3f} | {error:+.3f} |")
             mae = sum(abs_errors) / len(abs_errors) if abs_errors else 0.0
+            mean_relative_error_pct = (
+                sum(relative_errors) / len(relative_errors) if relative_errors else None
+            )
             converged = result.get("converged", False)
             iterations = result.get("iterations")
             if worst_row is not None:
-                print(f"Summary: converged={converged} iterations={iterations} dataset_MAE={mae:.3f} g/L worst={worst_row[0]} {worst_row[1]:+.3f} g/L")
+                rel_text = (
+                    f"{mean_relative_error_pct:.1f}%"
+                    if mean_relative_error_pct is not None
+                    else "n/a(trace)"
+                )
+                print(
+                    f"Summary: converged={converged} iterations={iterations} "
+                    f"dataset_MAE={mae:.3f} g/L dataset_rel_error={rel_text} "
+                    f"worst={worst_row[0]} {worst_row[1]:+.3f} g/L"
+                )
 
             if not converged:
                 append_unique(failures, f"{dataset_tag}: simulation did not converge")
@@ -96,6 +122,7 @@ def run_validation_basis(basis: str):
                     "converged": converged,
                     "iterations": iterations,
                     "mae": mae,
+                    "mean_relative_error_pct": mean_relative_error_pct,
                     "worst": worst_row,
                     "errors": metal_errors,
                     "estimated_naoh_flow_l_hr": estimated_naoh_flow,
@@ -113,6 +140,7 @@ def run_validation_basis(basis: str):
                     "converged": False,
                     "iterations": None,
                     "mae": None,
+                    "mean_relative_error_pct": None,
                     "worst": None,
                     "errors": {},
                     "estimated_naoh_flow_l_hr": None,
@@ -124,17 +152,30 @@ def run_validation_basis(basis: str):
 
     print(f"--- Overall Metal MAE Summary ({basis}) ---")
     overall_mae = {}
+    overall_relative_error_pct = {}
     for metal in DEFAULT_METALS:
         if overall_errors[metal]:
             metal_mae = sum(overall_errors[metal]) / len(overall_errors[metal])
             overall_mae[metal] = metal_mae
-            print(f"{metal}: MAE={metal_mae:.3f} g/L over {len(overall_errors[metal])} datasets")
+            if overall_relative_errors[metal]:
+                rel_pct = sum(overall_relative_errors[metal]) / len(overall_relative_errors[metal])
+                overall_relative_error_pct[metal] = rel_pct
+                print(
+                    f"{metal}: MAE={metal_mae:.3f} g/L, "
+                    f"mean_rel_error={rel_pct:.1f}% over {len(overall_errors[metal])} datasets"
+                )
+            else:
+                print(
+                    f"{metal}: MAE={metal_mae:.3f} g/L, "
+                    f"mean_rel_error=n/a(trace) over {len(overall_errors[metal])} datasets"
+                )
     print("")
 
     return {
         "basis": basis,
         "overall_errors": overall_errors,
         "overall_mae": overall_mae,
+        "overall_relative_error_pct": overall_relative_error_pct,
         "dataset_metrics": dataset_metrics,
         "failures": failures,
     }

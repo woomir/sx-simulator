@@ -705,6 +705,18 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         "dilution_iterations": dilution_iterations,
         "target_pH_dilution_converged": dilution_converged,
         "stage_saponification_fraction": stage_sap_fraction,
+        "aqueous_naoh_in_mol_hr": (
+            q_naoh_estimated * C_NaOH if naoh_mode == "aqueous_direct" else 0.0
+        ),
+        "aqueous_naoh_effective_mol_hr": (
+            NaOH_consumed if naoh_mode == "aqueous_direct" else 0.0
+        ),
+        "saponified_extractant_in_mol_hr": 0.0,
+        "saponified_extractant_out_mol_hr": 0.0,
+        "saponification_direct_neutralization_mol_hr": 0.0,
+        "saponification_metal_exchange_mol_hr": 0.0,
+        "saponification_inventory_error_mol_hr": 0.0,
+        "objective_converged": dilution_converged if naoh_mode == "aqueous_direct" else True,
     }
 
 
@@ -878,10 +890,22 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         "loading_fraction": final_loading,
         "iterations": iteration + 1,
         "stage_saponification_fraction": stage_sap_fraction,
+        "aqueous_naoh_in_mol_hr": (
+            C_NaOH * Q_NaOH if naoh_mode != "saponification" else 0.0
+        ),
+        "aqueous_naoh_effective_mol_hr": (
+            OH_effective if naoh_mode != "saponification" else 0.0
+        ),
         "saponified_extractant_in_mol_hr": saponified_extractant_in_mol_hr,
         "saponified_extractant_out_mol_hr": sap_balance["saponified_extractant_out_mol_hr"],
         "saponification_direct_neutralization_mol_hr": sap_balance["direct_neutralization_mol_hr"],
         "saponification_metal_exchange_mol_hr": sap_balance["metal_exchange_consumption_mol_hr"],
+        "saponification_inventory_error_mol_hr": (
+            saponified_extractant_in_mol_hr
+            - sap_balance["saponified_extractant_out_mol_hr"]
+            - sap_balance["saponification_capacity_used_mol_hr"]
+        ),
+        "objective_converged": True,
     }
 
 
