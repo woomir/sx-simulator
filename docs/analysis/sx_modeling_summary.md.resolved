@@ -1,6 +1,6 @@
 # SX 시뮬레이션 모델링 및 수계 이온 분포 문헌 요약
 
-이 문서는 제공된 PDF 자료([ALTA-2024-LBR-Paper-OLI.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/ALTA-2024-LBR-Paper-OLI.pdf), [wang2002.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/wang2002.pdf), [wang2004.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/wang2004.pdf), [wang2006.pdf](file:///Users/woomir/Project/%ED%9A%8C%EC%82%AC/08.%20SX%EC%8B%9C%EB%AE%AC%EB%A0%88%EC%9D%B8%EC%85%98%20-%20AHH/wang2006.pdf))를 바탕으로, Li, Ni, Co, Mn 용매추출(Solvent Extraction, SX) 역학 및 혼합 용매 전해질(MSE) 모델링에 관해 정리한 내용입니다. 이 자료는 향후 피드 조건, NaOH 첨가, 용매 조건에 따른 추출률 및 후액 pH를 예측하는 Mixer-Settler 시뮬레이션을 구축하기 위한 수학적 기틀이 됩니다.
+이 문서는 제공된 PDF 자료([ALTA-2024-LBR-Paper-OLI.pdf](../literature/foundational/ALTA-2024-LBR-Paper-OLI.pdf), [wang2002.pdf](../literature/foundational/wang2002.pdf), [wang2004.pdf](../literature/foundational/wang2004.pdf), [wang2006.pdf](../literature/foundational/wang2006.pdf))를 바탕으로, Li, Ni, Co, Mn 용매추출(Solvent Extraction, SX) 역학 및 혼합 용매 전해질(MSE) 모델링에 관해 정리한 내용입니다. 이 자료는 향후 피드 조건, NaOH 첨가, 용매 조건에 따른 추출률 및 후액 pH를 예측하는 Mixer-Settler 시뮬레이션을 구축하기 위한 수학적 기틀이 됩니다.
 
 ## 1. 열역학적 프레임워크: 혼합-용매 전해질(MSE) 모델
 제공된 논문(Wang et al., 2002; 2004; 2006)에 상세히 기술된 MSE 모델은 다공정, 다성분 전해질 시스템의 화학적 결합 및 상평형을 설명하는 데 사용됩니다. 용액의 비이상성을 모델링하기 위해 잉여 깁스 자유 에너지($G^{ex}$)를 다음 세 가지 항의 합으로 나타냅니다:

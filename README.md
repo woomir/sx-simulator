@@ -20,15 +20,27 @@ streamlit run sx_dashboard.py
 
 ## Project Structure
 
+```text
+sx_dashboard.py                 # Streamlit 웹 대시보드 (호환 경로 유지)
+sx_simulator_app.py             # CLI 실행 스크립트
+sx_simulator/                   # 시뮬레이션 엔진
+tests/                          # 자동 테스트
+scripts/analysis/               # 수동 분석/비교 스크립트
+docs/                           # 사용자 문서, 검토 기록, literature intake
+docs/architecture/              # 저장소 구조 가이드
+docs/analysis/                  # 기술 메모와 분석 요약
+deliverables/                   # 발표자료, 보고 산출물, 초안 작업공간
+tmp/                            # 로컬 임시 산출물 (gitignore)
 ```
-sx_simulator/          # 시뮬레이션 엔진
-├── config.py          # 금속/추출제 파라미터
-├── extraction_isotherm.py  # Isotherm 모델
-├── single_stage.py    # 단일 stage 솔버
-└── multistage_sx.py   # 다단 역류 솔버
-sx_dashboard.py        # Streamlit 웹 대시보드
-sx_simulator_app.py    # CLI 실행 스크립트
-```
+
+## Organization Rules
+
+- 웹앱 호환성을 위해 `sx_dashboard.py`와 `docs/user_manual.md` 등 웹앱이 직접 읽는 경로는 유지합니다.
+- 문헌 PDF와 handoff 기록은 `docs/literature/` 아래에서 계속 관리합니다.
+- 보고자료와 발표 초안은 루트가 아니라 `deliverables/` 아래에 둡니다.
+- 일회성 분석 스크립트는 루트가 아니라 `scripts/analysis/` 아래에 둡니다.
+
+자세한 규칙은 `AGENTS.md`와 `docs/architecture/repository_organization.md`를 참고합니다.
 
 ## References
 

@@ -36,6 +36,34 @@ streamlit run sx_dashboard.py
   - 현장 데이터(Data1~6)와 시뮬레이션 결과 비교
   - 현재는 보고서형 검증에 가깝고, 허용오차 기반 자동 실패 테스트는 제한적
 
+## 2.1 저장소 정리 원칙
+
+루트는 다음만 두는 것을 원칙으로 한다.
+
+- 실행 진입점
+- 최상위 프로젝트 안내 문서
+- 필수 설정 파일
+
+다음 경로는 호환성을 위해 안정적으로 유지한다.
+
+- `sx_dashboard.py`
+- `sx_simulator_app.py`
+- `sx_simulator/`
+- `docs/user_manual.md`
+- `docs/glossary.md`
+- `docs/references.md`
+- `docs/validation_history.md`
+- `docs/literature/`
+
+새 파일은 성격별로 아래 위치를 우선 사용한다.
+
+- 수동 분석 스크립트: `scripts/analysis/`
+- 자동 테스트: `tests/`
+- 기술 메모/분석 요약: `docs/analysis/`
+- 구조/운영 가이드: `docs/architecture/`
+- 발표자료/보고 산출물: `deliverables/`
+- 임시 산출물: `tmp/`
+
 ## 3. 런타임 구조
 
 실행 흐름은 아래와 같다.
@@ -177,19 +205,23 @@ sx_dashboard.py
 - `📘 사용자 매뉴얼`
   - 사용법 문서
 
-## 6. docs 폴더 역할
+## 6. docs 및 주변 폴더 역할
 
-`docs/`에는 크게 세 종류 문서가 있다.
+`docs/`와 인접 보조 폴더는 다음 역할로 나눈다.
 
 - 사용자 문서
   - 예: `docs/user_manual.md`
   - 예: `docs/glossary.md`
   - 예: `docs/references.md`
   - 예: `docs/validation_history.md`
+- 구조 가이드
+  - 예: `docs/architecture/repository_organization.md`
 - 검토/분석 문서
   - 예: 일반화 검토, 검증 보고서
   - 예: `docs/v2.1.1_다음단계_연구원협의_기획.md`
   - 예: `docs/v2.1.1_시뮬레이션_종합검증_보고서.md`
+- 기술 메모/요약
+  - 예: `docs/analysis/sx_modeling_summary.md.resolved`
 - 시뮬레이션 개선/검증 누적 로그
   - 예: `docs/v2.1.1_시뮬레이션_개선_누적로그.md`
   - 예: `docs/v2.1.1_시뮬레이션_검증_누적로그.md`
@@ -205,6 +237,10 @@ sx_dashboard.py
 
 - 사용자 기능 변경은 `CHANGELOG.md`
 - 내부 구조 변경은 refactoring 기록 문서
+- 문헌 PDF와 분류 로그는 `docs/literature/`
+- 대외 보고자료와 발표 초안은 `deliverables/`
+- 일회성 분석 스크립트는 `scripts/analysis/`
+- 임시 산출물은 `tmp/`에 두고 git에 넣지 않는다
 
 ## 7. 현재 모델의 성격
 
