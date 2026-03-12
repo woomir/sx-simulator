@@ -117,9 +117,14 @@ def step3_mccabe_thiele_logic():
         for m in ['Co']: # Just check Co
             mass_in = aq_in.get(m, 0)*vol_aq + org_in.get(m, 0)*vol_org
             mass_out = aq_out.get(m, 0)*vol_aq + org_out.get(m, 0)*vol_org
-            if abs(mass_in - mass_out) > 1e-4:
+            diff = abs(mass_in - mass_out)
+            stage_ok = diff <= 1e-4
+            if not stage_ok:
                 passed = False
-        print(f"Stage {i+1} Co balance OK. (Aq out: {aq_out.get('Co',0):.3f}, Org out: {org_out.get('Co',0):.3f})")
+        print(
+            f"Stage {i+1} Co balance {'OK' if stage_ok else 'FAIL'} "
+            f"(Diff: {diff:.6f}, Aq out: {aq_out.get('Co',0):.3f}, Org out: {org_out.get('Co',0):.3f})"
+        )
 
     print(f"Step 3 Passed: {passed}")
     return passed

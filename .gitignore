@@ -10,6 +10,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+tmp/
 
 # IDE
 .idea/
@@ -20,6 +21,14 @@ build/
 
 # Data files (large PDFs)
 *.pdf
+*.pptx
+
+# Local literature corpus and handoff logs
+docs/literature/
+
+# Deliverable build artifacts
+deliverables/**/rendered_png/
+deliverables/**/slides_build/node_modules/
 
 # Streamlit
 .streamlit/secrets.toml

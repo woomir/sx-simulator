@@ -156,6 +156,15 @@ def build_scope_assessment(
     total_feed_gL = sum(inputs.C_aq_feed.values())
     loading_pct = compute_loading_pct(result)
     total_naoh_mol_hr = result["total_NaOH_mol_hr"]
+    raw_feed_saponification_diagnostic = (
+        inputs.pH_mode == "고정 NaOH" and inputs.naoh_mode == "saponification"
+    )
+    d2ehpa_target_high_sulfate_multistage = (
+        inputs.extractant == "D2EHPA"
+        and inputs.pH_mode == "목표 pH (자동 NaOH)"
+        and inputs.n_stages >= 4
+        and inputs.C_sulfate >= 1.5
+    )
 
     pH_min, pH_max = VALIDATED_FIELD_WINDOW["pH"]
     cext_min, cext_max = VALIDATED_FIELD_WINDOW["C_ext_m"]
@@ -241,6 +250,19 @@ def build_scope_assessment(
             highlights.append(
                 "고정 NaOH + 사포니피케이션은 fresh organic sap inventory를 stage 간 counter-current로 전달하는 physical v2 경로를 사용합니다."
             )
+            cautions.append(
+                "physical v2 사포니피케이션 경로는 현재 공식 회귀 보호 기준이 아니며, 현장 프리셋 replay에서도 오차가 커질 수 있습니다."
+            )
+
+    if raw_feed_saponification_diagnostic:
+        cautions.append(
+            "고정 NaOH + 사포니피케이션 해석은 현재 raw-feed replay/진단용 경로입니다. 공식 검증은 legacy premixed target-pH 기준이 더 강합니다."
+        )
+
+    if d2ehpa_target_high_sulfate_multistage:
+        cautions.append(
+            "D2EHPA + 목표 pH + 고황산염 + 다단 조합은 현재 종합검증 보고서에서 대표 취약 구간으로 분류됩니다."
+        )
 
     if total_naoh_mol_hr > max(25.0, 0.5 * sum(inputs.C_aq_feed.values())):
         highlights.append(
@@ -256,6 +278,14 @@ def build_scope_assessment(
     else:
         level = "low"
         title = "검증 범위 밖"
+
+    if raw_feed_saponification_diagnostic and level == "high":
+        level = "medium"
+        title = "부분 검증 범위"
+
+    if d2ehpa_target_high_sulfate_multistage and level == "high":
+        level = "medium"
+        title = "부분 검증 범위"
 
     return {
         "level": level,
