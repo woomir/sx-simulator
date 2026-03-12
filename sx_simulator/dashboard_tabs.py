@@ -320,7 +320,10 @@ def render_mccabe_thiele_tab(
 ) -> None:
     st.subheader("📉 McCabe-Thiele 다이어그램")
     st.markdown(
-        "선택한 금속에 대한 조작선(Operating Line)과 평형 곡선(Equilibrium Curve)을 표시합니다."
+        "선택한 금속에 대한 조작선(Operating Line)과 평형 곡선(Equilibrium Curve)을 해석용으로 축약해 표시합니다."
+    )
+    st.warning(
+        "이 도표는 stagewise pH 변화와 다금속 경쟁추출을 1개의 기준 평형선으로 축약한 보조 시각화입니다. 단수 확정이나 최종 설계 근거로 단독 사용하면 안 됩니다."
     )
 
     mt_metal = st.selectbox(
@@ -330,7 +333,9 @@ def render_mccabe_thiele_tab(
     )
 
     ref_pH = result["pH_profile"][-1]
-    st.caption(f"💡 평형 곡선은 최종 후액 기준 pH ({ref_pH:.2f}) 로 계산되었습니다.")
+    st.caption(
+        f"💡 평형 곡선은 최종 후액 기준 pH ({ref_pH:.2f}) 로 계산되었습니다. 각 stage의 실제 pH, 로딩, 다성분 효과는 이 한 곡선에 완전히 표현되지 않습니다."
+    )
 
     x_max = C_aq_feed[mt_metal] * 1.2
     x_vals = np.linspace(0, x_max, 100)
@@ -492,13 +497,12 @@ def render_compare_tab(
 
     fig_iso_cmp = go.Figure()
     for extractant, color in [("Cyanex 272", "#e94560"), ("D2EHPA", "#0f3460")]:
-        ext_c = 0.5 if extractant == "Cyanex 272" else 0.64
         E_vals = [
             extraction_efficiency(
                 pH,
                 selected_metal,
                 extractant,
-                ext_c,
+                C_ext,
                 temperature,
                 extractant_params=active_extractant_params,
             )
@@ -606,6 +610,9 @@ def render_formula_tab(
     st.markdown(
         "현재 사이드바에 설정된 파라미터 값이 적용된 수식입니다. "
         "파라미터를 변경하면 수식도 실시간으로 업데이트됩니다."
+    )
+    st.warning(
+        "이 탭은 현재 앱의 준경험식과 보정 규칙을 설명합니다. full MSE/speciation solver나 recycle-aware flowsheet 모델을 의미하지 않습니다."
     )
     color_list = _metal_color_list(metals, metal_colors)
 

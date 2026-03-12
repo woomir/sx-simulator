@@ -4,6 +4,25 @@
 
 형식: [Semantic Versioning](https://semver.org/lang/ko/)
 
+## [Unreleased]
+
+### 🧭 전문가 리뷰 기반 claim 범위 정리
+
+- 웹앱 상단 설명을 `full MSE thermodynamic framework`처럼 읽히지 않도록 `준경험 황산염계 SX 모델` 표현으로 조정했습니다.
+- `McCabe-Thiele` 탭을 formal 단수 설계 도구가 아니라 해석용 보조 시각화로 명시했습니다.
+- 추출제 비교 탭의 isotherm 비교가 bar 비교와 다른 `C_ext`를 쓰던 불일치를 수정했습니다.
+
+### ⚠️ 검증 커버리지 경고 강화
+
+- `고정 NaOH + 사포니피케이션 + raw-feed replay` 경로를 공식 회귀 보호 기준이 아닌 `diagnostic` 경로로 더 명확히 경고합니다.
+- `D2EHPA + 목표 pH + 고황산염 + 다단` 조합은 현재 취약 구간으로 별도 caution을 표시합니다.
+- 현장 프리셋을 불러와도 위 diagnostic 경로가 자동으로 `high coverage`로 읽히지 않도록 커버리지 등급을 보수적으로 조정했습니다.
+
+### 📋 검증 문서 정합성 표시
+
+- `docs/v2.1.1_시뮬레이션_종합검증_보고서.md` 상단에, 2026-03-12 현재 로컬 재실행 결과와 일부 수치가 더 이상 일치하지 않는다는 경고를 추가했습니다.
+- `validation_test.py`의 stage balance 출력은 이제 FAIL 여부와 실제 diff를 직접 표시합니다.
+
 ## [v2.1.2] - 2026-03-11
 
 ### 🧪 알칼리 인터페이스 정리 및 사포니피케이션 경로 분리

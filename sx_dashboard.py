@@ -177,7 +177,7 @@ st.sidebar.selectbox(
     ["사용자 직접 입력"] + list(PRESETS.keys()),
     key="preset_sel",
     on_change=apply_preset,
-    help="선택 시 실험 조건 값(희석된 초기 농도, 유량, 추출제, 단수, 목표 pH 등)이 즉시 동기화됩니다."
+    help="선택 시 등록된 현장 입력값(원수 농도, 유량, 추출제, 단수, 기준 pH 등)이 즉시 동기화됩니다. 공식 회귀 검증은 별도 basis 변환 경로로 수행됩니다."
 )
 selected_preset_note = KNOWN_PRESET_NOTES.get(st.session_state.get("preset_sel"))
 if selected_preset_note:
@@ -230,7 +230,7 @@ st.sidebar.markdown("---")
 # --- NaOH 조건 ---
 # --- NaOH 조건 ---
 st.sidebar.header("🧪 pH 제어 (NaOH)")
-pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode", help="'목표 pH' 모드를 적극 권장합니다. 시뮬레이터가 원하는 산도에 도달하기 위한 최적 알칼리 투입량을 역산합니다.")
+pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode", help="'목표 pH' 모드는 검증 범위 안에서 빠르게 조건 비교를 시작할 때 유용합니다. 다만 D2EHPA·고황산염·다단 조건은 추가 주의가 필요합니다.")
 naoh_mode_label = st.sidebar.selectbox(
     "NaOH 적용 방식",
     ["수계 직접 투입", "사포니피케이션"],
@@ -430,7 +430,7 @@ active_extractant_params = get_active_extractant_params()
 # 메인 영역
 # =============================================================================
 st.title("⚗️ Li/Ni/Co/Mn Mixer-Settler SX 시뮬레이터")
-st.caption("MSE Thermodynamic Framework 기반 (ALTA 2024 / Wang et al.)")
+st.caption("Wang/ALTA 계열 문헌을 참조한 준경험 황산염계 SX 모델")
 
 metals = DEFAULT_METALS
 C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn,
