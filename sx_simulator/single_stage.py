@@ -1,25 +1,25 @@
+from typing import Optional
+
 """
-Single Stage Module
-===================
+Single Stage Module (Vasilyev 경쟁 모델 기반)
+==================================================
 1개 Mixer-Settler Stage에서의 물질수지 및 pH 변화를 계산하는 모듈.
 
 주요 기능:
-1. 수계/유기계 간 금속 분배 (분배 계수 D 기반)
+1. 수계/유기계 간 금속 분배 (Vasilyev 경쟁 추출 모델 기반 D값)
 2. pH 변화 추적 (H⁺ 수지 — 금속 추출에 의한 H⁺ 방출 + NaOH 중화)
 3. 목표 pH 모드: 원하는 pH를 유지하기 위한 NaOH 자동 계산
-4. 추출제 로딩 한계: 유기상 로딩률에 따른 D값 감쇠 (금속 경쟁)
-5. 추출제 경쟁 모드 (Phase 3): 공유 추출제 풀에서 금속 간 경쟁 반영
-6. 수계 종분화 (Phase 3): MOH⁺, MSO₄⁰ 종의 pH buffer 효과 반영
+4. 추출제 로딩 한계: 유기상 로딩률에 따른 D값 감쇠 (경쟁 추출)
+5. 수계 종분화: MOH⁺, MSO₄⁰ 종의 pH buffer 효과 반영
 """
 
 from .extraction_isotherm import (
     distribution_coefficient,
     get_proton_release,
     calc_loading_fraction,
-    loading_damping_factor,
     calc_free_NaL,
     clamp_saponification_fraction,
-    compute_competitive_extractions,
+    compute_stage_extractions,
     get_equilibrium_saponified_fraction,
     get_aqueous_speciation_state,
     get_sulfate_d_correction_factor,
@@ -30,86 +30,6 @@ from .config import (MOLAR_MASS, DEFAULT_METALS,
                      SAPONIFICATION_EQUIVALENT_TARGET_PH_COEFFS,
                      SAPONIFIED_LOADED_ORGANIC_RETENTION_FLOOR)
 
-
-def _partition_stage_with_damping(
-    pH: float,
-    C_aq_in: dict,
-    C_org_in: dict,
-    Q_aq_in: float,
-    Q_aq_out: float,
-    Q_org: float,
-    extractant: str,
-    C_ext: float,
-    metals: list,
-    temperature: float,
-    damping: float,
-    C_sulfate: float = 0.0,
-    use_speciation: bool = False,
-    saponification_fraction: float = 0.0,
-    extractant_params: dict = None,
-) -> dict:
-    """고정된 damping 값으로 금속 분배와 H+ 방출량을 계산합니다."""
-    C_aq_out = {}
-    C_org_out = {}
-    extraction = {}
-    total_H_released = 0.0
-
-    for metal in metals:
-        D_raw = distribution_coefficient(
-            pH, metal, extractant, C_ext, temperature=temperature,
-            saponification_fraction=saponification_fraction,
-            extractant_params=extractant_params
-        )
-        if use_speciation:
-            D_raw *= get_sulfate_d_correction_factor(
-                metal, extractant, pH, C_sulfate
-            )
-        D = D_raw * damping
-        MW = MOLAR_MASS[metal]
-
-        C_aq_mol_in = C_aq_in.get(metal, 0.0) / MW
-        C_org_mol_in = C_org_in.get(metal, 0.0) / MW
-        total_metal_flow = C_aq_mol_in * Q_aq_in + C_org_mol_in * Q_org
-        denominator = Q_aq_out + D * Q_org
-
-        C_aq_mol_out = total_metal_flow / denominator if denominator > 0 else 0.0
-        C_org_mol_out = D * C_aq_mol_out
-
-        C_aq_out[metal] = C_aq_mol_out * MW
-        C_org_out[metal] = C_org_mol_out * MW
-
-        metal_extracted = (C_aq_mol_in * Q_aq_in) - (C_aq_mol_out * Q_aq_out)
-        if C_aq_mol_in > 0:
-            extraction[metal] = max(0.0, metal_extracted / (C_aq_mol_in * Q_aq_in) * 100.0)
-        else:
-            extraction[metal] = 0.0
-
-        n_H = get_proton_release(
-            metal, extractant,
-            saponification_fraction=saponification_fraction,
-            extractant_params=extractant_params,
-        )
-        total_H_released += n_H * max(0.0, metal_extracted)
-
-    stage_state = {
-        "C_aq_out": C_aq_out,
-        "C_org_out": C_org_out,
-        "extraction": extraction,
-        "H_released_mol_hr": total_H_released,
-    }
-    return _apply_saponified_loaded_organic_retention(
-        stage_state,
-        C_aq_in,
-        C_org_in,
-        Q_aq_in,
-        Q_aq_out,
-        Q_org,
-        extractant,
-        C_ext,
-        metals,
-        saponification_fraction,
-        extractant_params,
-    )
 
 
 def _apply_saponified_loaded_organic_retention(
@@ -193,7 +113,7 @@ def _apply_saponified_loaded_organic_retention(
     return stage_state
 
 
-def _solve_competitive_stage_state(
+def _solve_stage_state(
     pH: float,
     C_aq_in: dict,
     C_org_in: dict,
@@ -209,8 +129,8 @@ def _solve_competitive_stage_state(
     saponification_fraction: float = 0.0,
     extractant_params: dict = None,
 ) -> dict:
-    """경쟁 추출 모드의 단일 stage 평형 상태를 계산합니다."""
-    result = compute_competitive_extractions(
+    """Vasilyev 경쟁 추출 모델 기반 단일 stage 평형 상태를 계산합니다."""
+    result = compute_stage_extractions(
         pH, extractant, C_ext, C_aq_in, C_org_in,
         Q_aq_in, Q_org, metals, temperature, Q_aq_eff=Q_aq_out,
         C_sulfate=C_sulfate, use_speciation=use_speciation,
@@ -267,26 +187,19 @@ def solve_single_stage(
     C_NaOH: float = 0.0,
     Q_NaOH: float = 0.0,
     naoh_mode: str = "aqueous_direct",
-    saponification_fraction: float | None = None,
-    saponified_extractant_mol_hr: float | None = None,
+    saponification_fraction: Optional[float] = None,
+    saponified_extractant_mol_hr: Optional[float] = None,
     metals: list = None,
     temperature: float = None,
     C_sulfate: float = 0.0,
-    use_competition: bool = False,
     use_speciation: bool = False,
     extractant_params: dict = None,
 ) -> dict:
     """
     단일 Mixer-Settler stage의 평형 계산을 수행합니다.
+    Vasilyev 경쟁 추출 모델을 기반으로 금속 간 추출제 경쟁을 항상 반영합니다.
+    목표 pH 모드로 작동하며 지정한 pH를 달성하는 데 필요한 NaOH를 자동 계산합니다.
 
-    두 가지 모드를 지원합니다:
-    1. **고정 NaOH 모드** (target_pH = None): 주어진 NaOH 유량/농도로 계산
-    2. **목표 pH 모드** (target_pH = 값): 지정한 pH를 달성하는 데 필요한 NaOH를 자동 계산
-
-    고급 옵션 (Phase 3):
-    - use_competition: 추출제 경쟁 반영 (공유 추출제 풀)
-    - use_speciation: 수계 종분화 반영 (MOH⁺, MSO₄⁰)
-    
     Parameters
     ----------
     C_aq_in : dict   — 수계 입구 금속 농도 {금속: g/L}
@@ -296,12 +209,11 @@ def solve_single_stage(
     Q_org : float    — 유기계 유량 (L/hr)
     extractant : str — 추출제 종류
     C_ext : float    — 추출제 농도 (M)
-    C_NaOH : float   — NaOH 농도 (M), 고정 NaOH 모드용
-    Q_NaOH : float   — NaOH 유량 (L/hr), 고정 NaOH 모드용
-    target_pH : float — 목표 pH (None이면 고정 NaOH 모드)
+    C_NaOH : float   — NaOH 농도 (M), 정보 표시/초기값 목적용
+    Q_NaOH : float   — NaOH 유량 (L/hr), 정보 표시/초기값 목적용
+    target_pH : float — 목표 pH (필수)
     metals : list    — 계산할 금속 리스트
     temperature : float — 온도 (°C)
-    use_competition : bool — 추출제 경쟁 반영 여부
     use_speciation : bool — 수계 종분화 반영 여부
 
     Returns
@@ -313,14 +225,13 @@ def solve_single_stage(
     if metals is None:
         metals = DEFAULT_METALS
 
-    # 목표 pH 모드: 목표 pH에서의 평형을 직접 계산
     if target_pH is not None:
         return _solve_at_target_pH(
             C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
             extractant, C_ext, target_pH, C_NaOH, Q_NaOH, naoh_mode,
             saponification_fraction, metals,
             temperature, C_sulfate,
-            use_competition, use_speciation, extractant_params
+            use_speciation, extractant_params
         )
     else:
         return _solve_with_fixed_NaOH(
@@ -328,14 +239,14 @@ def solve_single_stage(
             extractant, C_ext, C_NaOH, Q_NaOH, naoh_mode,
             saponification_fraction, saponified_extractant_mol_hr, metals,
             temperature, C_sulfate,
-            use_competition, use_speciation, extractant_params
+            use_speciation, extractant_params
         )
 
 def calc_aq_protons(pH: float, Q_aq: float, C_sulfate: float, C_aq: dict = None, use_speciation: bool = False) -> float:
     """
     수계의 총 해리가능 양성자(H+) 몰스피드(mol/hr)를 계산합니다.
     황산(HSO4-) 수용액의 버퍼 효과(pKa=1.99) 포함.
-    Phase 3: 종분화(MOH⁺)에 의한 OH⁻ 소비(즉, H⁺ 생성과 동등한 효과) 반영.
+    종분화(MOH⁺)에 의한 OH⁻ 소비(즉, H⁺ 생성과 동등한 효과) 반영.
     또한 황산염 착물(MSO4^0)이 자유 금속 분율을 낮춰 hydrolysis를 완화하는
     효과를 간접 반영합니다.
     """
@@ -375,7 +286,7 @@ def estimate_saponified_extractant_mol_flow(
     Q_org: float,
     C_NaOH: float,
     Q_NaOH: float,
-    manual_fraction: float | None = None,
+    manual_fraction: Optional[float] = None,
 ) -> float:
     """신선 유기상이 보유한 Na-form extractant 등가량(mol/hr)을 계산합니다."""
     if C_ext <= 0.0 or Q_org <= 0.0:
@@ -402,7 +313,7 @@ def estimate_equivalent_saponification_target_pH(
     Q_NaOH: float,
     C_sulfate: float = 0.0,
     use_speciation: bool = False,
-    saponification_fraction: float | None = None,
+    saponification_fraction: Optional[float] = None,
 ) -> float:
     """
     fixed saponification 조건을 등가 cascade target pH로 환산합니다.
@@ -443,7 +354,7 @@ def estimate_saponification_fraction(
     Q_org: float,
     C_NaOH: float,
     Q_NaOH: float,
-    manual_fraction: float | None = None,
+    manual_fraction: Optional[float] = None,
 ) -> float:
     """NaOH 조건에서 유기상 사포니피케이션 비율을 계산합니다."""
     if C_ext <= 0.0 or Q_org <= 0.0:
@@ -657,63 +568,25 @@ def _solve_target_pH_stage_equilibrium(
     metals: list,
     temperature=None,
     C_sulfate: float = 0.0,
-    use_competition: bool = False,
     use_speciation: bool = False,
     saponification_fraction: float = 0.0,
     extractant_params: dict = None,
 ) -> dict:
-    """지정된 목표 pH와 출구 수계 유량에서 단일 stage 평형을 계산합니다."""
+    """지정된 목표 pH와 출구 수계 유량에서 Vasilyev 경쟁 모델 기반 단일 stage 평형을 계산합니다."""
     C_sulfate_eq = dilute_concentration_by_flow(C_sulfate, Q_aq_in, Q_aq_out)
 
-    if use_competition:
-        stage_state = _solve_competitive_stage_state(
-            target_pH, C_aq_in, C_org_in, Q_aq_in, Q_aq_out, Q_org,
-            extractant, C_ext, metals, temperature, C_sulfate_eq,
-            use_speciation, saponification_fraction, extractant_params
-        )
-        return {
-            "C_aq_out": stage_state["C_aq_out"],
-            "C_org_out": stage_state["C_org_out"],
-            "extraction": stage_state["extraction"],
-            "H_released_mol_hr": stage_state["H_released_mol_hr"],
-            "loading_fraction": stage_state["loading_fraction"],
-            "inner_iterations": 1,
-            "C_sulfate_out_M": C_sulfate_eq,
-        }
-
-    max_loading_iter = 30
-    loading_tol = 1e-4
-    damping = 1.0
-    relaxation = 0.5
-
-    for load_iter in range(max_loading_iter):
-        stage_state = _partition_stage_with_damping(
-            target_pH, C_aq_in, C_org_in, Q_aq_in, Q_aq_out, Q_org,
-            extractant, C_ext, metals, temperature, damping,
-            C_sulfate_eq, use_speciation, saponification_fraction,
-            extractant_params
-        )
-        C_org_out = stage_state["C_org_out"]
-
-        new_loading = calc_loading_fraction(
-            C_org_out, extractant, C_ext, metals, extractant_params
-        )
-        new_damping = loading_damping_factor(new_loading)
-        damping_prev = damping
-        damping = relaxation * new_damping + (1 - relaxation) * damping
-        if load_iter > 0 and abs(damping - damping_prev) < loading_tol:
-            break
-
-    final_loading = calc_loading_fraction(
-        stage_state["C_org_out"], extractant, C_ext, metals, extractant_params
+    stage_state = _solve_stage_state(
+        target_pH, C_aq_in, C_org_in, Q_aq_in, Q_aq_out, Q_org,
+        extractant, C_ext, metals, temperature, C_sulfate_eq,
+        use_speciation, saponification_fraction, extractant_params
     )
     return {
         "C_aq_out": stage_state["C_aq_out"],
         "C_org_out": stage_state["C_org_out"],
         "extraction": stage_state["extraction"],
         "H_released_mol_hr": stage_state["H_released_mol_hr"],
-        "loading_fraction": final_loading,
-        "inner_iterations": load_iter + 1,
+        "loading_fraction": stage_state["loading_fraction"],
+        "inner_iterations": 1,
         "C_sulfate_out_M": C_sulfate_eq,
     }
 
@@ -722,7 +595,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                           extractant, C_ext, target_pH, C_NaOH, Q_NaOH,
                           naoh_mode, saponification_fraction, metals,
                           temperature=None, C_sulfate=0.0,
-                          use_competition=False, use_speciation=False,
+                          use_speciation=False,
                           extractant_params=None):
     """
     목표 pH 모드: 지정된 pH에서 평형을 계산하고, 필요한 NaOH를 역산합니다.
@@ -749,7 +622,7 @@ def _solve_at_target_pH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
         stage_state = _solve_target_pH_stage_equilibrium(
             target_pH, C_aq_in, C_org_in, Q_aq, Q_aq_out, Q_org,
             extractant, C_ext, metals, temperature, C_sulfate,
-            use_competition, use_speciation, stage_sap_fraction, extractant_params
+            use_speciation, stage_sap_fraction, extractant_params
         )
         C_sulfate_out = stage_state["C_sulfate_out_M"]
         NaOH_consumed, _ = _estimate_target_pH_naoh_consumption(
@@ -833,10 +706,10 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
                              saponification_fraction, saponified_extractant_mol_hr,
                              metals,
                              temperature=None, C_sulfate=0.0,
-                             use_competition=False, use_speciation=False,
+                             use_speciation=False,
                              extractant_params=None):
     """
-    고정 NaOH 모드: 주어진 NaOH로 pH를 반복 계산합니다.
+    고정 NaOH 모드 (내부 엔진용): 주어진 NaOH(또는 사포니피케이션 용량)로 pH를 반복 계산합니다.
     """
     C_aq_out = {}
     C_org_out = {}
@@ -890,48 +763,16 @@ def _solve_with_fixed_NaOH(C_aq_in, C_org_in, pH_in, Q_aq, Q_org,
 
     for iteration in range(max_iter):
         pH_current = (pH_low + pH_high) / 2.0
-        total_H_released = 0.0
 
-        if use_competition:
-            stage_state = _solve_competitive_stage_state(
-                pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                extractant, C_ext, metals, temperature, C_sulfate_eff,
-                use_speciation, stage_sap_fraction, extractant_params
-            )
-            C_aq_out = stage_state["C_aq_out"]
-            C_org_out = stage_state["C_org_out"]
-            extraction = stage_state["extraction"]
-            total_H_released = stage_state["H_released_mol_hr"]
-        else:
-            # 로딩 감쇠 내부 반복 (target_pH 모드와 동일한 패턴)
-            damping = 1.0
-            for _load_iter in range(15):
-                trial_state = _partition_stage_with_damping(
-                    pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                    extractant, C_ext, metals, temperature, damping,
-                    C_sulfate_eff, use_speciation, stage_sap_fraction,
-                    extractant_params
-                )
-                new_loading = calc_loading_fraction(
-                    trial_state["C_org_out"], extractant, C_ext, metals, extractant_params
-                )
-                new_damping = loading_damping_factor(new_loading)
-                if abs(new_damping - damping) < 1e-4:
-                    damping = new_damping
-                    break
-                damping = 0.5 * new_damping + 0.5 * damping
-
-            # 확정된 damping으로 최종 계산
-            stage_state = _partition_stage_with_damping(
-                pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
-                extractant, C_ext, metals, temperature, damping,
-                C_sulfate_eff, use_speciation, stage_sap_fraction,
-                extractant_params
-            )
-            C_aq_out = stage_state["C_aq_out"]
-            C_org_out = stage_state["C_org_out"]
-            extraction = stage_state["extraction"]
-            total_H_released = stage_state["H_released_mol_hr"]
+        stage_state = _solve_stage_state(
+            pH_current, C_aq_in, C_org_in, Q_aq, Q_aq_eff, Q_org,
+            extractant, C_ext, metals, temperature, C_sulfate_eff,
+            use_speciation, stage_sap_fraction, extractant_params
+        )
+        C_aq_out = stage_state["C_aq_out"]
+        C_org_out = stage_state["C_org_out"]
+        extraction = stage_state["extraction"]
+        total_H_released = stage_state["H_released_mol_hr"]
 
         total_H_in = calc_aq_protons(pH_in, Q_aq, C_sulfate, C_aq_in, use_speciation)
 

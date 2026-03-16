@@ -1,3 +1,5 @@
+from typing import Optional
+
 """
 Multistage SX Module
 ====================
@@ -45,7 +47,7 @@ def _build_naoh_distribution(
     naoh_weights: list = None,
     naoh_strategy: str = "uniform",
 ) -> list:
-    """다단 고정 NaOH 분배량을 계산합니다."""
+    """목표 pH 도달을 위한 초기/추정 NaOH 분배 방향을 계산합니다."""
     if naoh_weights is not None and len(naoh_weights) == n_stages:
         weights = naoh_weights
     elif naoh_strategy == "front_loaded":
@@ -109,8 +111,8 @@ def _compute_max_relative_diff(
     current_org_out: list,
     previous_org_out: list,
     metals: list,
-    current_sap_out: list[float] | None = None,
-    previous_sap_out: list[float] | None = None,
+    current_sap_out: Optional[list[float]] = None,
+    previous_sap_out: Optional[list[float]] = None,
 ) -> float:
     """유기상 프로파일 변화의 최대 상대차를 계산합니다."""
     max_diff = 0.0
@@ -155,7 +157,7 @@ def _interpolate_stage_targets(stage_targets: list, pH_feed: float, level: float
 def _resolve_stage_saponified_input_mol_hr(
     stage_idx: int,
     n_stages: int,
-    sap_profile_seed: list[float] | None,
+    sap_profile_seed: Optional[list[float]],
     fresh_sap_input_mol_hr: float,
 ) -> float:
     """현재 stage 유기상에 유입되는 sap inventory를 seed profile에서 읽어옵니다."""
@@ -180,7 +182,7 @@ def solve_multistage_countercurrent(
     Q_NaOH: float = 0.0,
     naoh_mode: str = "aqueous_direct",
     saponification_model: str = "physical_v2",
-    saponification_fraction: float | None = None,
+    saponification_fraction: Optional[float] = None,
     naoh_strategy: str = "uniform",
     naoh_weights: list = None,
     C_org_fresh: dict = None,
@@ -189,17 +191,15 @@ def solve_multistage_countercurrent(
     max_iter: int = None,
     temperature: float = None,
     C_sulfate: float = 0.0,
-    use_competition: bool = False,
     use_speciation: bool = False,
     extractant_params: dict = None,
 ) -> dict:
     """
     역류 다단 Mixer-Settler 시뮬레이션.
 
-    pH 제어 모드:
-    1. target_pH (float): 모든 stage에 동일한 목표 pH 적용
-    2. target_pH_per_stage (list): stage별 개별 목표 pH 지정
-    3. 둘 다 None이면 고정 NaOH 모드
+    pH 제어 모드 (항상 목표 pH 기반):
+    1. target_pH (float): 단일 목표 pH 적용
+    2. target_pH_per_stage (list): stage별로 자동 분배된 연속 목표 pH 적용
     """
     if metals is None:
         metals = DEFAULT_METALS
@@ -261,7 +261,7 @@ def solve_multistage_countercurrent(
         org_profile_seed: list,
         Q_NaOH_dist: list,
         stage_targets: list,
-        sap_profile_seed: list | None = None,
+        sap_profile_seed: Optional[list] = None,
         fresh_sap_input_mol_hr: float = 0.0,
     ) -> list:
         """주어진 유기상 seed를 사용해 relaxation 없는 stage 결과를 계산합니다."""
@@ -298,7 +298,7 @@ def solve_multistage_countercurrent(
                         else saponification_fraction
                     ),
                     temperature=temperature, C_sulfate=C_sulfate_current,
-                    use_competition=use_competition, use_speciation=use_speciation,
+                    use_speciation=use_speciation,
                     extractant_params=extractant_params,
                 )
             else:
@@ -319,7 +319,7 @@ def solve_multistage_countercurrent(
                         saponification_fraction=saponification_fraction,
                         metals=metals,
                         temperature=temperature, C_sulfate=C_sulfate_current,
-                        use_competition=use_competition, use_speciation=use_speciation,
+                        use_speciation=use_speciation,
                         extractant_params=extractant_params,
                     )
                 else:
@@ -331,7 +331,7 @@ def solve_multistage_countercurrent(
                         saponification_fraction=saponification_fraction,
                         metals=metals,
                         temperature=temperature, C_sulfate=C_sulfate_current,
-                        use_competition=use_competition, use_speciation=use_speciation,
+                        use_speciation=use_speciation,
                         extractant_params=extractant_params,
                     )
                 if alkali_contract.application == "aqueous_direct":
@@ -407,7 +407,7 @@ def solve_multistage_countercurrent(
         test_q_naoh: float,
         stage_targets: list = None,
         initial_org_out: list = None,
-        initial_sap_out: list | None = None,
+        initial_sap_out: Optional[list] = None,
         relaxation_scale: float = 1.0,
         solver_strategy: str = "direct",
     ) -> dict:
@@ -489,7 +489,7 @@ def solve_multistage_countercurrent(
                         ),
                         temperature=temperature,
                         C_sulfate=C_sulfate_current,
-                        use_competition=use_competition,
+
                         use_speciation=use_speciation,
                         extractant_params=extractant_params,
                     )
@@ -516,7 +516,7 @@ def solve_multistage_countercurrent(
                             metals=metals,
                             temperature=temperature,
                             C_sulfate=C_sulfate_current,
-                            use_competition=use_competition,
+    
                             use_speciation=use_speciation,
                             extractant_params=extractant_params,
                         )
@@ -530,7 +530,7 @@ def solve_multistage_countercurrent(
                             metals=metals,
                             temperature=temperature,
                             C_sulfate=C_sulfate_current,
-                            use_competition=use_competition,
+    
                             use_speciation=use_speciation,
                             extractant_params=extractant_params,
                         )
@@ -741,7 +741,7 @@ def solve_multistage_countercurrent(
             max_iter=max_iter,
             temperature=temperature,
             C_sulfate=C_sulfate,
-            use_competition=use_competition,
+
             use_speciation=use_speciation,
             extractant_params=extractant_params,
         )

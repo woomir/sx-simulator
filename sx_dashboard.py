@@ -150,7 +150,7 @@ def apply_preset():
     st.session_state.ui_target_pH = d['pH']
     st.session_state.ui_n_stages = d['n_stages']
     st.session_state.ui_temperature = d['T']
-    st.session_state.ui_pH_mode = "고정 NaOH"
+    st.session_state.ui_pH_mode = "목표 pH (자동 NaOH)"
     st.session_state.ui_naoh_mode_label = "사포니피케이션"
     st.session_state.ui_naoh_basis = "wt%"
     st.session_state.ui_NaOH_wt_pct = float(d.get("naoh_wt_pct", 10.0))
@@ -227,123 +227,54 @@ st.sidebar.info(f"💎 계산된 SO₄²⁻: **{C_sulfate:.3f} M**")
 
 st.sidebar.markdown("---")
 
-# --- NaOH 조건 ---
-# --- NaOH 조건 ---
-st.sidebar.header("🧪 pH 제어 (NaOH)")
-pH_mode = st.sidebar.radio("pH 제어 모드", ["목표 pH (자동 NaOH)", "고정 NaOH"], index=0, key="ui_pH_mode", help="'목표 pH' 모드를 적극 권장합니다. 시뮬레이터가 원하는 산도에 도달하기 위한 최적 알칼리 투입량을 역산합니다.")
-naoh_mode_label = st.sidebar.selectbox(
-    "NaOH 적용 방식",
-    ["수계 직접 투입", "사포니피케이션"],
-    key="ui_naoh_mode_label",
-    help="현장처럼 유기상 사포니피케이션으로 준비된 용매를 해석할지, 수계에 NaOH 용액을 직접 넣는 것으로 해석할지 선택합니다.",
-)
-naoh_mode = "saponification" if naoh_mode_label == "사포니피케이션" else "aqueous_direct"
+# --- pH 제어 (사포니피케이션) ---
+st.sidebar.header("🧪 pH 제어 (사포니피케이션)")
+pH_mode = "목표 pH (자동 NaOH)"
+target_pH = st.sidebar.slider("후액 목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH",
+    help="최종 후액(Raffinate)의 목표 pH를 설정합니다. 시뮬레이터가 이 pH를 달성하기 위한 사포니피케이션 용량을 자동으로 역산합니다.")
+st.sidebar.caption("유기상 사포니피케이션 기반: 최종 후액 pH를 목표로 fresh sap inventory를 자동 역산합니다.")
+
+naoh_mode = "saponification"
 saponification_model = "physical_v2"
-C_NaOH = 0.0
-Q_NaOH = 0.0
 naoh_wt_pct = None
+staged_pHs = None  # 사포니피케이션 모드에서는 stage별 pH 미사용
 use_staged_pH = False
+enable_target_pH_dilution = False
 
-if naoh_mode == "saponification":
-    use_legacy_saponification_fallback = st.sidebar.checkbox(
-        "Legacy equivalent-target fallback 사용",
-        value=bool(st.session_state.get("ui_use_legacy_saponification_fallback", False)),
-        key="ui_use_legacy_saponification_fallback",
-        help="활성화 시 기존 field-calibrated equivalent target 경로를 사용합니다. 기본값은 physical v2 sap cascade입니다.",
+use_legacy_saponification_fallback = st.sidebar.checkbox(
+    "Legacy equivalent-target fallback 사용",
+    value=bool(st.session_state.get("ui_use_legacy_saponification_fallback", False)),
+    key="ui_use_legacy_saponification_fallback",
+    help="활성화 시 기존 field-calibrated equivalent target 경로를 사용합니다. 기본값은 physical v2 sap cascade입니다.",
+)
+if use_legacy_saponification_fallback:
+    saponification_model = "legacy_equivalent_target"
+
+naoh_basis = st.sidebar.selectbox(
+    "사포니피케이션 NaOH 농도 입력",
+    ["wt%", "M"],
+    key="ui_naoh_basis",
+)
+if naoh_basis == "wt%":
+    naoh_wt_pct = st.sidebar.number_input(
+        "NaOH 농도 (wt%)", 1.0, 50.0, 10.0, 1.0, key="ui_NaOH_wt_pct"
     )
-    if use_legacy_saponification_fallback:
-        saponification_model = "legacy_equivalent_target"
-
-if pH_mode == "목표 pH (자동 NaOH)":
-    if naoh_mode == "saponification":
-        target_pH = st.sidebar.slider("후액 목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
-        st.sidebar.caption(
-            "fresh organic 사포니피케이션에서는 stage별 pH가 아니라 최종 후액 pH를 목표로 fresh sap inventory를 역산합니다."
-        )
-        naoh_basis = st.sidebar.selectbox(
-            "사포니피케이션 농도 입력",
-            ["wt%", "M"],
-            key="ui_naoh_basis",
-        )
-        if naoh_basis == "wt%":
-            naoh_wt_pct = st.sidebar.number_input(
-                "NaOH 농도 (wt%)", 1.0, 50.0, 10.0, 1.0, key="ui_NaOH_wt_pct"
-            )
-            C_NaOH = estimate_naoh_molarity_from_wt_pct(naoh_wt_pct)
-            st.sidebar.caption(f"환산 농도: 약 {C_NaOH:.2f} M")
-        else:
-            C_NaOH = st.sidebar.number_input(
-                "NaOH 농도 (M, 사포니피케이션 환산용)",
-                0.1,
-                20.0,
-                float(st.session_state.get("ui_C_NaOH", 5.0)),
-                0.5,
-                key="ui_C_NaOH",
-            )
-        Q_NaOH = st.sidebar.number_input(
-            "사포니피케이션 NaOH 유량 힌트 (L/hr, 선택)",
-            0.0,
-            500.0,
-            float(st.session_state.get("ui_Q_NaOH", 0.0)),
-            0.1,
-            key="ui_Q_NaOH",
-            help="0이면 solver가 fresh sap 필요량을 자동 탐색합니다. 양수를 넣으면 탐색 상한/초기 힌트로 사용합니다.",
-        )
-        enable_target_pH_dilution = False
-    else:
-        target_pH = st.sidebar.slider("목표 pH", 2.0, 8.0, 5.0, 0.1, key="ui_target_pH")
-        use_staged_pH = st.sidebar.checkbox("Stage별 차등 pH", value=False)
-        enable_target_pH_dilution = st.sidebar.checkbox(
-            "NaOH 희석 self-consistent 추정",
-            value=st.session_state.get("ui_enable_target_pH_dilution", False),
-            key="ui_enable_target_pH_dilution",
-            help="활성화 시 목표 pH 달성에 필요한 NaOH 유량을 역산하고, 가정한 NaOH 농도 기준으로 수계 희석 효과까지 함께 계산합니다. 현장 프리셋은 기존 검증과의 일관성을 위해 기본 OFF를 권장합니다.",
-        )
-        if enable_target_pH_dilution:
-            C_NaOH = st.sidebar.number_input(
-                "NaOH 농도 (M, 희석 추정용)", 0.1, 20.0, 5.0, 0.5, key="ui_C_NaOH"
-            )
+    C_NaOH = estimate_naoh_molarity_from_wt_pct(naoh_wt_pct)
+    st.sidebar.caption(f"환산 농도: 약 {C_NaOH:.2f} M")
 else:
-    target_pH = None
-    if naoh_mode == "saponification":
-        naoh_basis = st.sidebar.selectbox(
-            "사포니피케이션 농도 입력",
-            ["wt%", "M"],
-            key="ui_naoh_basis",
-        )
-        if naoh_basis == "wt%":
-            naoh_wt_pct = st.sidebar.number_input(
-                "NaOH 농도 (wt%)", 1.0, 50.0, 10.0, 1.0, key="ui_NaOH_wt_pct"
-            )
-            C_NaOH = estimate_naoh_molarity_from_wt_pct(naoh_wt_pct)
-            st.sidebar.caption(f"환산 농도: 약 {C_NaOH:.2f} M")
-        else:
-            C_NaOH = st.sidebar.number_input(
-                "NaOH 농도 (M, 사포니피케이션 환산용)",
-                0.1,
-                20.0,
-                float(st.session_state.get("ui_C_NaOH", 5.0)),
-                0.5,
-                key="ui_C_NaOH",
-            )
-        Q_NaOH = st.sidebar.number_input(
-            "사포니피케이션 NaOH 유량 (L/hr)",
-            0.0,
-            500.0,
-            float(st.session_state.get("ui_Q_NaOH", 12.0)),
-            0.1,
-            key="ui_Q_NaOH",
-        )
-        st.sidebar.caption(
-            "고정 NaOH + 사포니피케이션은 입력 NaOH 조건을 raw-feed 기준 fresh organic sap 상태로 해석합니다."
-        )
-        if saponification_model == "legacy_equivalent_target":
-            st.sidebar.caption("현재 legacy equivalent-target fallback이 활성화되어 있습니다.")
-        else:
-            st.sidebar.caption("현재 physical v2 sap cascade가 활성화되어 있습니다.")
-    else:
-        C_NaOH = st.sidebar.number_input("NaOH 농도 (M)", 0.1, 20.0, 5.0, 0.5, key="ui_C_NaOH")
-        Q_NaOH = st.sidebar.number_input("총 NaOH 유량 (L/hr)", 0.0, 500.0, 12.0, 1.0, key="ui_Q_NaOH")
+    C_NaOH = st.sidebar.number_input(
+        "NaOH 농도 (M)",
+        0.1,
+        20.0,
+        float(st.session_state.get("ui_C_NaOH", 5.0)),
+        0.5,
+        key="ui_C_NaOH",
+    )
+Q_NaOH = 0.0  # 항상 0.0으로 두어 solver가 자동 역산(목표 pH 기반)하도록 강제합니다.
+
+# NaOH 분배 전략 (사포니피케이션 모드에서는 자동)
+naoh_strategy = "uniform"
+naoh_weights = None
 
 st.sidebar.markdown("---")
 
@@ -366,40 +297,9 @@ st.sidebar.markdown("---")
 st.sidebar.header("🔄 Mixer-Settler 설정")
 n_stages = st.sidebar.slider("Stage 수", 1, 10, 4, key="ui_n_stages", help="실제 현장에 구성될 연속 추출 다단 반응조의 갯수입니다. 많을수록 추출 한계치에 수렴합니다.")
 
-# Stage별 pH 입력 (차등 모드)
-staged_pHs = None
-if pH_mode == "목표 pH (자동 NaOH)" and use_staged_pH:
-    st.sidebar.caption("Stage별 목표 pH 입력 (1단~N단):")
-    cols = st.sidebar.columns(min(n_stages, 4))
-    staged_pHs = []
-    for i in range(n_stages):
-        with cols[i % len(cols)]:
-            val = st.number_input(f"St.{i+1}", 2.0, 8.0, float(target_pH), 0.1, key=f"stage_ph_{i}")
-            staged_pHs.append(val)
-
-# NaOH 분배 전략 (고정 NaOH 모드)
-naoh_strategy = "uniform"
-naoh_weights = None
-if pH_mode == "고정 NaOH":
-    st.sidebar.markdown("---")
-    st.sidebar.header("💧 NaOH 분배 전략")
-    naoh_strategy_label = st.sidebar.selectbox("분배 방식", ["균등 (Uniform)", "전단집중 (Front-loaded)", "커스텀 (Custom)"])
-    naoh_strategy_map = {"균등 (Uniform)": "uniform", "전단집중 (Front-loaded)": "front_loaded", "커스텀 (Custom)": "custom"}
-    naoh_strategy = naoh_strategy_map[naoh_strategy_label]
-
-    if naoh_strategy == "custom":
-        st.sidebar.caption("각 Stage별 가중치 (비율) 입력:")
-        cols = st.sidebar.columns(min(n_stages, 4))
-        naoh_weights = []
-        for i in range(n_stages):
-            with cols[i % len(cols)]:
-                w = st.number_input(f"St.{i+1}", 0.0, 10.0, 1.0, 0.1, key=f"naoh_w_{i}")
-                naoh_weights.append(w)
-
-
 st.sidebar.markdown("---")
 
-# 고급 옵션 (Phase 3)은 성능 향상을 위해 기본 활성화 됨 (무조건 True)
+# Vasilyev 경쟁 추출 모델 — 항상 활성화 (기본 엔진)
 
 # --- 모델 파라미터 편집 ---
 st.sidebar.header("📐 모델 파라미터 편집")
@@ -430,7 +330,7 @@ active_extractant_params = get_active_extractant_params()
 # 메인 영역
 # =============================================================================
 st.title("⚗️ Li/Ni/Co/Mn Mixer-Settler SX 시뮬레이터")
-st.caption("MSE Thermodynamic Framework 기반 (ALTA 2024 / Wang et al.)")
+st.caption("Vasilyev 경쟁 추출 모델 기반 (Vasilyev et al. 2019)")
 
 metals = DEFAULT_METALS
 C_aq_feed = {"Li": C_Li, "Ni": C_Ni, "Co": C_Co, "Mn": C_Mn,
@@ -512,6 +412,7 @@ with tab1:
         n_stages=n_stages,
         metal_colors=METAL_COLORS,
         scope_renderer=render_scope_assessment,
+        inputs=simulation_inputs,
     )
 
 # =============================================================================
@@ -674,4 +575,4 @@ with tab7:
 # 푸터
 # =============================================================================
 st.markdown("---")
-st.caption(f"⚗️ SX Simulator v{APP_VERSION} | MSE Framework (ALTA 2024 / Wang et al. 2002, 2004, 2006)")
+st.caption(f"⚗️ SX Simulator v{APP_VERSION} | Vasilyev 경쟁 추출 모델 (Vasilyev et al. 2019)")

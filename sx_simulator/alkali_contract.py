@@ -1,3 +1,5 @@
+from typing import Optional
+
 """
 Alkali interface contracts
 ==========================
@@ -42,8 +44,8 @@ class AlkaliContract:
 def build_alkali_contract(
     *,
     naoh_mode: str,
-    target_pH: float | None,
-    target_pH_per_stage: list[float] | None,
+    target_pH: Optional[float],
+    target_pH_per_stage: Optional[list[float]],
     saponification_model: str = "physical_v2",
 ) -> AlkaliContract:
     """legacy kwargs를 명시적 알칼리 계약으로 정규화합니다."""

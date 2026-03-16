@@ -1,3 +1,5 @@
+from typing import Optional
+
 """
 SX Simulator Configuration
 ==========================
@@ -269,7 +271,9 @@ SITE_PARAMETER_OVERRIDES = {
 }
 
 
-def _build_parameter_profile(base_params: dict, overrides: dict | None = None) -> dict:
+from typing import Optional
+
+def _build_parameter_profile(base_params: dict, overrides: Optional[dict] = None) -> dict:
     """기본 파라미터에 선택적 override를 적용한 깊은 복사본을 반환합니다."""
     params = copy.deepcopy(base_params)
     if not overrides:
@@ -335,13 +339,34 @@ CONVERGENCE_SAP_ABS_TOL_MOL_HR = 2e-4
 MAX_LOADING_FRACTION = 0.95   # 최대 로딩률 (추출제 용량의 95%까지 사용 가능)
 
 # =============================================================================
-# 추출제 경쟁 모델 설정 (Phase 3 — Mechanistic Light)
+# 추출제 해리 상수 (pKa) — 약산 추출제의 해리 평형
+# =============================================================================
+# D2EHPA, Cyanex 272는 약산성 추출제로, 물과 접촉 시 해리됩니다:
+#   HA(org) ⇌ H⁺(aq) + A⁻(aq)
+# pH < pKa 영역에서는 비해리 형태(HA)가 우세 → 이온교환 추출에 유리
+# pH ≈ pKa 영역에서는 해리 분율 변화로 추출률에 영향
+# 해리 보정 계수: f_pKa = 1 / (1 + 10^(pH - pKa))
+#   → pH << pKa: f_pKa ≈ 1.0 (거의 비해리, 추출 정상)
+#   → pH >> pKa: f_pKa → 0   (해리 우세, HA 가용량 감소)
+#
+# 문헌 출처:
+#   D2EHPA: pKa ≈ 3.24 (apparent, Danesi et al.; kjmm.org 비교 데이터)
+#   Cyanex 272: pKa ≈ 6.37 (apparent, kjmm.org 비교 데이터)
+EXTRACTANT_PKA = {
+    "D2EHPA": 3.24,
+    "Cyanex 272": 6.37,
+}
+
+# =============================================================================
+# 추출제 경쟁 모델 설정 (Vasilyev 경쟁 추출 모델 — 기본 엔진)
 # =============================================================================
 # Vasilyev et al. (2019)의 메커니즘을 단순화한 경쟁 추출 모델
 # 핵심: 공유 추출제 풀에서 금속 간 경쟁 반영
 # D_adjusted(M) = D_sigmoid(M) × ([HA]_free / C_ext)^n_ext(M)
 
-DEFAULT_USE_COMPETITION = False   # 기본값: 경쟁 OFF (기존 시그모이드 모드)
+# Vasilyev 경쟁 추출 모델은 기본 엔진으로 항상 활성화됩니다.
+# 이 상수는 하위 호환성을 위해 유지됩니다.
+DEFAULT_USE_COMPETITION = True
 
 # 추출 우선순위: pH₅₀가 낮은 금속이 먼저 추출제를 소비
 EXTRACTION_PRIORITY = {
@@ -423,7 +448,7 @@ SAPONIFIED_LOADED_ORGANIC_RETENTION_FLOOR = {
 }
 
 # =============================================================================
-# 수계 종분화 평형 상수 (Phase 3 — Aqueous Speciation)
+# 수계 종분화 평형 상수 (Aqueous Speciation)
 # =============================================================================
 # M²⁺ + OH⁻ ⇌ MOH⁺   (K_MOH = [MOH⁺] / ([M²⁺]·[OH⁻]))
 # M²⁺ + SO₄²⁻ ⇌ MSO₄⁰  (K_MSO4 = [MSO₄⁰] / ([M²⁺]·[SO₄²⁻]))

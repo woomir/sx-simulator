@@ -18,7 +18,7 @@ from sx_simulator.multistage_sx import solve_multistage_countercurrent, print_mu
 def main():
     print("=" * 70)
     print("  Li/Ni/Co/Mn Mixer-Settler SX 시뮬레이터")
-    print("  Based on MSE Thermodynamic Framework (ALTA 2024 / Wang et al.)")
+    print("  Based on Vasilyev Competitive Extraction Model (Vasilyev et al. 2019)")
     print("=" * 70)
 
     # =================================================================

@@ -1,3 +1,5 @@
+from typing import Optional
+
 """
 Dashboard Tab Renderers
 =======================
@@ -23,8 +25,9 @@ from .extraction_isotherm import (
     extraction_efficiency,
     get_effective_k,
     get_effective_pH50,
-    loading_damping_factor,
+    pka_dissociation_factor,
 )
+from .config import EXTRACTANT_PKA
 from .fitting import fit_sigmoid, sigmoid_model
 
 
@@ -38,12 +41,13 @@ def render_results_tab(
     loading_pct: float,
     scope_assessment: dict,
     profile_label: str,
-    selected_preset_note: str | None,
+    selected_preset_note: Optional[str],
     C_aq_feed: dict,
     pH_feed: float,
     n_stages: int,
     metal_colors: dict,
     scope_renderer,
+    inputs,
 ) -> None:
     if not result["converged"]:
         st.error(
@@ -73,12 +77,18 @@ def render_results_tab(
                 delta=f"후액: {raff:.3f} g/L",
             )
 
-    col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+    col_info1, col_info2, col_info3, col_info4, col_info5 = st.columns(5)
     with col_info1:
         st.metric("후액 최종 pH", f"{result['pH_profile'][-1]:.2f}")
     with col_info2:
         st.metric("총 NaOH 소비", f"{result['total_NaOH_mol_hr']:.1f} mol/hr")
+    
+    sap_capacity_mol_hr = inputs.C_ext * inputs.Q_org
+    sap_pct = (result['total_NaOH_mol_hr'] / sap_capacity_mol_hr * 100.0) if sap_capacity_mol_hr > 0 else 0.0
     with col_info3:
+        st.metric("Saponification %", f"{sap_pct:.1f}%", help="입력된 유기계 유량(Q_org)과 추출제 농도(C_ext) 대비, 실제 계산/투입된 NaOH의 몰 비율입니다.")
+
+    with col_info4:
         if loading_pct > 85:
             st.metric(
                 "최대 로딩률",
@@ -88,7 +98,7 @@ def render_results_tab(
             )
         else:
             st.metric("최대 로딩률", f"{loading_pct:.1f}%")
-    with col_info4:
+    with col_info5:
         if result["converged"]:
             st.metric("수렴 상태", "수렴", delta=f"{result['iterations']} iter")
         else:
@@ -229,7 +239,7 @@ def render_isotherm_tab(
     extractant: str,
     C_ext: float,
     temperature: float,
-    target_pH: float | None,
+    target_pH: Optional[float],
     active_extractant_params: dict,
     metal_colors: dict,
     ph_plot_range: list,
@@ -353,7 +363,8 @@ def render_mccabe_thiele_tab(
             [mt_metal],
             extractant_params=active_extractant_params,
         )
-        D = D * loading_damping_factor(loading)
+        damping = max(0.0, 1.0 - loading) if loading > 0.85 else 1.0
+        D = D * damping
         eq_y_vals.append(D * x)
 
     fig_mt = go.Figure()
@@ -591,8 +602,8 @@ def render_formula_tab(
     T_REF: float,
     metals: list,
     active_extractant_params: dict,
-    target_pH: float | None,
-    staged_pHs: list | None,
+    target_pH: Optional[float],
+    staged_pHs: Optional[list],
     pH_mode: str,
     Q_aq: float,
     Q_org: float,
@@ -601,18 +612,25 @@ def render_formula_tab(
     metal_colors: dict,
 ) -> None:
     st.subheader(
-        f"📐 시스템 수식 및 메커니즘 알고리즘 ({extractant}, {C_ext}M, {temperature:.0f}°C)"
+        f"📐 시스템 수식 및 메커니즘 ({extractant}, {C_ext}M, {temperature:.0f}°C)"
     )
     st.markdown(
-        "현재 사이드바에 설정된 파라미터 값이 적용된 수식입니다. "
-        "파라미터를 변경하면 수식도 실시간으로 업데이트됩니다."
+        "본 시뮬레이터는 **시그모이드 근사(OLI/MSE 기반 파라미터) + Vasilyev 경쟁 보정**의 "
+        "하이브리드 모델을 사용합니다. 파라미터를 변경하면 수식도 실시간으로 업데이트됩니다."
+    )
+    st.info(
+        "🔬 **모델 구조:**\n\n"
+        "- **1층 — 기본 D 계산:** OLI/MSE 열역학 데이터에서 피팅한 시그모이드 함수 (pH50, k, E_max)\n"
+        "- **2층 — 경쟁 보정:** Vasilyev et al. (2019)의 공유 추출제 풀 모델로 금속 간 경쟁 반영"
     )
     color_list = _metal_color_list(metals, metal_colors)
 
     st.markdown("---")
-    st.markdown("### 1️⃣ 추출률 (Extraction Efficiency)")
+    st.markdown("### 1️⃣ 기본 추출률 (시그모이드 근사 — OLI/MSE 파라미터)")
     st.markdown(
-        "각 금속의 pH에 따른 추출률을 **시그모이드(Sigmoid) 함수**로 근사합니다:"
+        "각 금속의 pH에 따른 **기본 추출률**을 시그모이드(Sigmoid) 함수로 근사합니다. "
+        "이 파라미터(pH50, k, E_max)는 OLI Systems의 MSE 열역학 프레임워크에서 "
+        "도출한 추출 곡선을 피팅하여 얻은 값입니다:"
     )
     st.latex(
         r"E_M(\text{pH}, T) = \frac{E_{\max}}{1 + \exp\!\left(-k(T) \cdot (\text{pH} - \text{pH}_{50,\text{eff}}(T))\right)}"
@@ -692,12 +710,12 @@ def render_formula_tab(
                 rf"(\text{{pH}} - {ph50_eff:.2f})\right)}}"
             )
 
-            st.markdown("**Phase 3: 금속 추출제 경합 보정 (기본 활성)**")
+            st.markdown("**2층 — Vasilyev 경쟁 보정: 실제 D값 계산**")
             st.latex(
                 r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left(\frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right)^{n_{\text{eff}}}"
             )
             st.caption(
-                "유기상 잔여 액체 추출제량에 비례하여 높은 로딩(Loading) 시 다핵 착물 형성에 따른 추출 효율을 동적 감소시킵니다."
+                "Vasilyev et al. (2019): 위 시그모이드로 구한 기본 D에 잔여 추출제 비율을 곱하여 금속 간 경쟁을 반영합니다."
             )
             pHs = [x * 0.1 for x in range(10, 101)]
             Es = [
@@ -794,6 +812,34 @@ def render_formula_tab(
         st.dataframe(pd.DataFrame(d_data), use_container_width=True, hide_index=True)
 
     st.markdown("---")
+    st.markdown("### 2️⃣-B 추출제 해리 평형 (pKa)")
+    pKa_val = EXTRACTANT_PKA.get(extractant)
+    if pKa_val is not None:
+        st.markdown(
+            f"**{extractant}**는 약산 추출제로, 수계와 접촉 시 해리됩니다:"
+        )
+        st.latex(r"\overline{\text{HA}}_{\text{(org)}} \rightleftharpoons \text{H}^+_{\text{(aq)}} + \text{A}^-_{\text{(aq)}}")
+        st.latex(rf"\text{{pKa}} = {pKa_val:.2f}")
+        st.markdown(
+            "비해리 분율(HA 형태 유지 비율):"
+        )
+        st.latex(
+            r"f_{\text{pKa}} = \frac{1}{1 + 10^{(\text{pH} - \text{pKa})}}"
+        )
+        if target_pH:
+            f_val = pka_dissociation_factor(target_pH, extractant)
+            st.info(
+                f"📌 목표 pH = {target_pH}에서 **{extractant}**의 비해리(HA) 분율: "
+                f"**f_pKa = {f_val:.4f}** ({f_val*100:.1f}%)"
+            )
+        st.caption(
+            f"현재 모델에서는 시그모이드 파라미터(pH50, k)가 OLI/MSE 열역학으로부터 피팅되었기 때문에 "
+            f"pKa 효과가 이미 내재되어 있습니다. 이 섹션은 참고용 정보입니다."
+        )
+    else:
+        st.info(f"{extractant}의 pKa 데이터가 등록되어 있지 않습니다.")
+
+    st.markdown("---")
     st.markdown("### 3️⃣ 단일 Stage 물질수지 (Mass Balance)")
     st.markdown("각 Mixer-Settler stage에서 수계(Aqueous)와 유기계(Organic)의 평형:")
     st.latex(r"D_M = \frac{C_{M,\text{org}}^{\text{out}}}{C_{M,\text{aq}}^{\text{out}}}")
@@ -836,10 +882,10 @@ def render_formula_tab(
     )
     st.latex(r"\text{pH}_{\text{out}} = -\log_{10}\!\left([\text{H}^+]_{\text{out}}\right)")
 
-    st.markdown("**Phase 3: 수계 금속 종분화(Speciation) 효과 (기본 활성)**")
+    st.markdown("**수계 금속 종분화(Speciation) 효과**")
     st.latex(r"[\text{H}^+]_{\text{hydrolysis}} \approx \sum_M K_{MOH} \cdot [\text{M}^{n+}] \cdot [\text{OH}^-]")
     st.caption(
-        "고 pH 역외 접근 시 금속 수산화물 착물(MOH⁺ 등)이 생성되며 양성자를 방출(OH⁻ 소비)해 직접적인 완충제로 작용함을 수지에 기본 반영했습니다."
+        "고 pH 역외 접근 시 금속 수산화물 착물(MOH⁺ 등)이 생성되며 양성자를 방출(OH⁻ 소비)해 직접적인 완충제로 작용함을 수지에 반영했습니다."
     )
 
     if pH_mode == "목표 pH (자동 NaOH)":
@@ -874,20 +920,69 @@ def render_formula_tab(
     )
 
     st.markdown("---")
-    st.markdown("### 7️⃣ 추출 농도 물리적 한계 (Phase 3: 다핵 착물 모델)")
+    st.markdown("### 7️⃣ 추출 농도 물리적 한계 (Vasilyev 경쟁 모델: 다핵 착물 보정)")
     st.markdown(
-        "금속 로딩량이 치솟아 남은 자유 추출제($\\overline{\\text{HA}}$)가 모자랄 때, $D_M$ 지표가 급격하게 저하되도록 억제하는 고도화 수식입니다. (v2.0 다핵 착물 $n_{\\text{eff}}$ 완화 적용)"
+        "금속 로딩량이 치솟아 남은 자유 추출제($\\overline{\\text{HA}}$)가 모자랄 때, $D_M$ 지표가 급격하게 저하되도록 억제하는 Vasilyev 경쟁 모델의 핵심 수식입니다. (v2.0 다핵 착물 $n_{\\text{eff}}$ 완화 적용)"
     )
     st.latex(r"[\overline{\text{HA}}]_{\text{free}} = C_{\text{ext}} - \sum_{M} n_{\text{eff},M} \cdot C_{M,\text{org}}")
     st.latex(
         r"D_{M}^{\text{adj}} = D_{M}^{\text{sig}} \times \left( \max\left(10^{-4}, \frac{[\overline{\text{HA}}]_{\text{free}}}{C_{\text{ext}}}\right) \right)^{n_{\text{eff}}}"
     )
     st.caption(
-        "고농도 피드 유입 시 모든 금속이 100% 추출되는 비현실적 결과를 방지하고 가용 유기제 내에서 실제적인 상호 조율점(Crowding Out)을 찾습니다."
+        "Vasilyev et al. (2019): 고농도 피드 유입 시 모든 금속이 100% 추출되는 비현실적 결과를 방지하고 가용 유기제 내에서 실제적인 상호 조율점(Crowding Out)을 찾습니다."
     )
 
     st.markdown("---")
-    st.markdown("### 8️⃣ 성능 지표")
+    st.markdown("### 8️⃣ 시뮬레이션 계산 흐름 (Step-by-Step)")
+    st.markdown(
+        "시뮬레이터가 결과를 도출하는 **전체 계산 순서**를 단계별로 설명합니다."
+    )
+    st.markdown(
+        """
+**Step 1. 입력 준비**
+- 사용자가 설정한 피드 농도, pH, 유량, 추출제 종류/농도, 온도, 단수(Stage 수) 등을 읽어옵니다.
+- 피드 용액의 금속 황산염 조성에서 SO₄²⁻ 농도를 자동 계산합니다.
+
+**Step 2. 각 Stage에서의 평형 계산 (핵심)**
+
+각 Stage에서 다음 순서로 금속별 분배를 계산합니다:
+
+> **① 시그모이드로 기본 D 계산 (OLI/MSE 파라미터)**
+> - 각 금속의 pH50, k, E_max를 온도와 추출제 농도로 보정
+> - 보정된 시그모이드로 기본 분배계수 $D_{sig}$ 계산
+>
+> **② 잔여 추출제 풀 계산 (Vasilyev 모델)**
+> - 유기상에 이미 로딩된 금속이 소비한 추출제를 차감
+> - $[\overline{HA}]_{free} = C_{ext} - \sum n_{eff,M} \cdot C_{M,org}$
+>
+> **③ pH₅₀ 우선순위로 금속 순차 처리**
+> - pH₅₀가 낮은 금속(추출 잘 되는 금속)부터 먼저 처리
+> - 예: Zn → Mn → Ca → Mg → Co → Ni → Li 순서
+>
+> **④ 경쟁 보정된 D값으로 물질수지 계산**
+> - $D_{adj} = D_{sig} \times (HA_{free}/C_{ext})^{n_{eff}}$
+> - 이 D값으로 수계/유기계 출구 농도를 결정
+> - 해당 금속이 소비한 추출제를 풀에서 차감 → 다음 금속에 영향
+
+**Step 3. pH 수지 계산**
+- 금속 추출 시 방출된 H⁺ 총량 계산
+- 수계 종분화(MOH⁺) 효과, 황산 버퍼(HSO₄⁻) 효과 반영
+- NaOH 중화량 차감 → 출구 pH 결정
+
+**Step 4. 다단 역류 수렴 반복**
+- Stage 1→N 방향으로 수계, Stage N→1 방향으로 유기계가 역류
+- 각 Stage의 유기상 출구 농도가 수렴할 때까지 반복 (수십~수백회)
+- Under-relaxation으로 안정적 수렴 유도
+
+**Step 5. 결과 출력**
+- 후액(Raffinate) 농도, 로딩 유기(Loaded Organic) 농도
+- Stage별 pH 프로파일, NaOH 소비량
+- 전체 추출률, 분리 계수 등 성능 지표
+"""
+    )
+
+    st.markdown("---")
+    st.markdown("### 9️⃣ 성능 지표")
     col_perf1, col_perf2 = st.columns(2)
     with col_perf1:
         st.markdown("**추출률 (Percent Extraction):**")

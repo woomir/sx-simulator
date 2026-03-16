@@ -1,3 +1,5 @@
+from typing import Optional
+
 """
 Dashboard Service Module
 ========================
@@ -29,16 +31,16 @@ class SimulationInputs:
     temperature: float
     C_sulfate: float
     pH_mode: str
-    target_pH: float | None = None
-    staged_pHs: list[float] | None = None
+    target_pH: Optional[float] = None
+    staged_pHs: Optional[list[float]] = None
     C_NaOH: float = 0.0
     Q_NaOH: float = 0.0
     naoh_mode: str = "aqueous_direct"
-    naoh_wt_pct: float | None = None
+    naoh_wt_pct: Optional[float] = None
     saponification_model: str = "physical_v2"
-    saponification_fraction: float | None = None
+    saponification_fraction: Optional[float] = None
     naoh_strategy: str = "uniform"
-    naoh_weights: list[float] | None = None
+    naoh_weights: Optional[list[float]] = None
     metals: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -58,7 +60,7 @@ def build_simulation_kwargs(
         metals=list(inputs.metals),
         temperature=inputs.temperature,
         C_sulfate=inputs.C_sulfate,
-        use_competition=True,
+
         use_speciation=True,
         extractant_params=extractant_params,
         naoh_mode=inputs.naoh_mode,
@@ -68,21 +70,16 @@ def build_simulation_kwargs(
     if inputs.saponification_fraction is not None:
         sim_kwargs["saponification_fraction"] = inputs.saponification_fraction
 
-    if inputs.pH_mode == "목표 pH (자동 NaOH)":
-        if inputs.staged_pHs:
-            sim_kwargs["target_pH_per_stage"] = inputs.staged_pHs
-        else:
-            sim_kwargs["target_pH"] = inputs.target_pH
-        if inputs.C_NaOH > 0:
-            sim_kwargs["C_NaOH"] = inputs.C_NaOH
-        if inputs.naoh_mode == "saponification" and inputs.Q_NaOH > 0:
-            sim_kwargs["Q_NaOH"] = inputs.Q_NaOH
+    # 사포니피케이션 모드는 항상 단일 목표 pH (후액)만 지원하므로 staged_pHs를 무시합니다
+    if inputs.staged_pHs and inputs.naoh_mode != "saponification":
+        sim_kwargs["target_pH_per_stage"] = inputs.staged_pHs
     else:
+        sim_kwargs["target_pH"] = inputs.target_pH
+        
+    if inputs.C_NaOH > 0:
         sim_kwargs["C_NaOH"] = inputs.C_NaOH
+    if inputs.naoh_mode == "saponification" and inputs.Q_NaOH > 0:
         sim_kwargs["Q_NaOH"] = inputs.Q_NaOH
-        sim_kwargs["naoh_strategy"] = inputs.naoh_strategy
-        if inputs.naoh_weights is not None:
-            sim_kwargs["naoh_weights"] = inputs.naoh_weights
 
     return sim_kwargs
 

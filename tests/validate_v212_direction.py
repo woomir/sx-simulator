@@ -1,3 +1,5 @@
+from typing import Optional
+
 import os
 import sys
 import math
@@ -49,11 +51,11 @@ def mean_or_zero(values: list[float]) -> float:
     return statistics.fmean(values) if values else 0.0
 
 
-def mean_or_none(values: list[float]) -> float | None:
+def mean_or_none(values: list[float]) -> Optional[float]:
     return statistics.fmean(values) if values else None
 
 
-def relative_error_pct(simulated: float, experimental: float) -> float | None:
+def relative_error_pct(simulated: float, experimental: float) -> Optional[float]:
     if abs(experimental) < TRACE_EXPECTED_FLOOR_G_L:
         return None
     return abs(simulated - experimental) / abs(experimental) * 100.0
@@ -141,7 +143,6 @@ def run_case(case: dict, mode: str, extractant_params: dict) -> dict:
         "temperature": case["temperature"],
         "C_sulfate": case["C_sulfate"],
         "metals": DEFAULT_METALS,
-        "use_competition": True,
         "use_speciation": True,
         "extractant_params": extractant_params,
     }
@@ -239,7 +240,6 @@ def evaluate_field_by_extractant(extractant: str, extractant_params: dict) -> di
             sim_kwargs = {
                 **prepared["sim_kwargs"],
                 "metals": DEFAULT_METALS,
-                "use_competition": True,
                 "use_speciation": True,
                 "extractant_params": extractant_params,
             }

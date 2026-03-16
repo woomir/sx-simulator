@@ -1,3 +1,5 @@
+from typing import Optional
+
 """
 Shared SX field datasets
 ========================
@@ -241,7 +243,7 @@ def estimate_naoh_molarity_from_wt_pct(wt_pct: float) -> float:
 def prepare_verification_case(
     case: dict,
     basis: str = "legacy_premixed_target_pH",
-    assumed_naoh_concentration_m: float | None = None,
+    assumed_naoh_concentration_m: Optional[float] = None,
 ) -> dict:
     """검증 데이터 한 건을 지정한 basis 기준의 엔진 입력으로 변환합니다."""
     if basis not in VALIDATION_BASES:

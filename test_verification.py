@@ -1,3 +1,5 @@
+from typing import Optional
+
 import sys
 import os
 
@@ -23,7 +25,7 @@ def append_unique(items: list[str], message: str) -> None:
         items.append(message)
 
 
-def relative_error_pct(simulated: float, experimental: float) -> float | None:
+def relative_error_pct(simulated: float, experimental: float) -> Optional[float]:
     if abs(experimental) < TRACE_EXPECTED_FLOOR_G_L:
         return None
     return abs(simulated - experimental) / abs(experimental) * 100.0
@@ -41,7 +43,6 @@ def run_validation_basis(basis: str):
         sim_kwargs = {
             **prepared["sim_kwargs"],
             "metals": DEFAULT_METALS,
-            "use_competition": True,
             "use_speciation": True,
         }
 

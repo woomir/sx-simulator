@@ -1,24 +1,28 @@
+from typing import Optional
+
 """
-Extraction Isotherm Module
-==========================
+Extraction Isotherm Module (Vasilyev 경쟁 추출 모델 기반)
+=========================================================
 pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 모듈.
 
-시그모이드 함수로 pH-추출률 관계를 근사:
+기본 시그모이드 함수로 pH-추출률 관계를 근사:
   E(pH, T) = E_max / (1 + exp(-k(T) · (pH - pH50(T))))
 
 온도 보정:
   pH50(T) = pH50(T_ref) + beta · (T - T_ref) + alpha · log(C_ext/C_ref)
   k(T)        = k_ref * exp(gamma * (T - T_ref))
 
-경쟁 추출 (Phase 3 — Mechanistic Light):
+Vasilyev 경쟁 추출 모델 (기본 엔진):
   D_adjusted(M) = D_sigmoid(M) × ([HA]_free / C_ext)^n_ext(M)
   Vasilyev et al. (2019)의 공유 추출제 풀 개념을 시그모이드와 결합
+  모든 stage 평형 계산이 이 경쟁 모델을 통해 수행됩니다.
 """
 
 import math
 from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
                      T_REF, DEFAULT_TEMPERATURE, MAX_LOADING_FRACTION,
                      EXTRACTION_PRIORITY, SPECIATION_CONSTANTS,
+                     EXTRACTANT_PKA,
                      FREE_METAL_CORRECTION_REFERENCE_SULFATE_M,
                      FREE_METAL_CORRECTION_MIN,
                      FREE_METAL_CORRECTION_MAX,
@@ -31,6 +35,35 @@ from .config import (EXTRACTANT_PARAMS, MOLAR_MASS, DEFAULT_METALS,
 def _resolve_extractant_params(extractant_params: dict = None) -> dict:
     """명시적 파라미터 세트가 없으면 기본 전역 설정을 사용합니다."""
     return extractant_params if extractant_params is not None else EXTRACTANT_PARAMS
+
+
+def pka_dissociation_factor(pH: float, extractant: str) -> float:
+    """추출제의 pKa 기반 해리 보정 계수를 반환합니다.
+
+    약산 추출제(HA)는 수계와 접촉 시 해리됩니다:
+      HA(org) ⇌ H⁺(aq) + A⁻(aq)
+
+    비해리 분율(HA 형태 유지 비율):
+      f_pKa = 1 / (1 + 10^(pH - pKa))
+
+    - pH << pKa: f ≈ 1.0 (HA 형태 우세, 추출 정상)
+    - pH = pKa:  f = 0.5 (절반 해리)
+    - pH >> pKa: f → 0   (A⁻ 형태 우세, 가용 HA 감소)
+
+    Parameters
+    ----------
+    pH : float — 현재 수계 pH
+    extractant : str — 추출제 이름
+
+    Returns
+    -------
+    float : 비해리 분율 (0.0 ~ 1.0)
+    """
+    pKa = EXTRACTANT_PKA.get(extractant)
+    if pKa is None:
+        return 1.0  # pKa 데이터 없으면 보정 없음
+    return 1.0 / (1.0 + 10.0 ** (pH - pKa))
+
 
 
 def _get_metal_params(
@@ -114,7 +147,7 @@ def get_effective_k(metal: str, extractant: str,
     return k_eff
 
 
-def clamp_saponification_fraction(saponification_fraction: float | None) -> float:
+def clamp_saponification_fraction(saponification_fraction: Optional[float]) -> float:
     """사포니피케이션 분율을 모델 허용 범위로 제한합니다."""
     if saponification_fraction is None:
         return 0.0
@@ -477,10 +510,10 @@ def calc_free_NaL(pH: float, C_ext: float, extractant: str,
 
 
 # =========================================================================
-# 추출제 경쟁 모델 (Phase 3 — Vasilyev-inspired)
+# Vasilyev 경쟁 추출 모델 — 기본 stage 평형 엔진
 # =========================================================================
 
-def compute_competitive_extractions(
+def compute_stage_extractions(
     pH: float, extractant: str, C_ext: float,
     C_aq_in: dict, C_org_in: dict,
     Q_aq: float, Q_org: float,
@@ -493,8 +526,9 @@ def compute_competitive_extractions(
     extractant_params: dict = None,
 ) -> dict:
     """
-    추출제 경쟁을 반영한 분배 계수 및 추출 결과를 계산합니다.
+    Vasilyev 경쟁 추출 모델 기반 분배 계수 및 추출 결과를 계산합니다.
 
+    이 함수가 시뮬레이터의 기본(유일한) stage 평형 계산 경로입니다.
     Vasilyev et al. (2019)의 "공유 추출제 풀" 개념을 시그모이드 모델과 결합:
       D_adjusted(M) = D_sigmoid(M) × ([HA]_free / C_ext)^n_ext(M)
 
@@ -603,7 +637,11 @@ def compute_competitive_extractions(
                 metal, extractant, pH, C_sulfate
             )
 
-        # 잔여 추출제 비율로 보정
+        # pKa 참고: 추출제 해리 상태는 시그모이드 파라미터(pH50, k)에
+        # 이미 내재되어 있으므로 경쟁 계수에 별도 적용하지 않습니다.
+        # pka_dissociation_factor(pH, extractant) 함수는 대시보드 표시용으로 제공됩니다.
+
+        # 잔여 추출제 비율로 경쟁 보정 (Vasilyev)
         if C_ext > 0 and HA_free > 0:
             ratio = HA_free / C_ext
             ratio_eff = max(1e-4, ratio)
