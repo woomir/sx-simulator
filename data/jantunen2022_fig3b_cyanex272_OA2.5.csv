@@ -1,0 +1,74 @@
+# Source: Jantunen et al. (2022), Metals 12, 1445, Figure 3(b)
+# Extractant: 0.8 M Cyanex 272 (diluted in Exxsol D80)
+# O/A = 2.5, T = 25±1°C, t_eq = 15 min
+# Feed [g/L]: Li 2.52, Ni 2.05, Co 16.5, Mn 2.09
+# Na introduced via NaOH pH adjustment (no fixed initial conc.)
+# Extraction method: auto-digitized from PDF (scripts/digitize_fig3b.py)
+# Calibration: PH_SCALE=85.8 px/pH, E_SLOPE=-0.18143, E_INTERCEPT=116.12
+# Ni/Li/Co: color-filtered marker detection; Mn: pink-filtered; Na: manual (grey undetectable)
+# Supplemented: pH 5.27 anchors from paper text (p.7); Li/Mn/Co E=0% baselines inferred
+metal,pH,E_pct
+Mn,1.00,0.0
+Mn,2.00,0.0
+Mn,3.44,18.1
+Mn,4.14,77.6
+Mn,5.27,99.8
+Mn,5.51,99.3
+Co,1.00,0.0
+Co,2.00,0.0
+Co,3.00,0.0
+Co,3.44,3.7
+Co,4.14,45.2
+Co,5.27,99.0
+Co,5.51,97.4
+Co,5.77,98.2
+Co,5.99,98.3
+Co,6.32,98.4
+Co,6.69,98.4
+Co,6.95,98.7
+Co,7.15,99.0
+Co,7.26,99.0
+Co,7.95,99.0
+Co,8.05,99.0
+Ni,1.30,0.0
+Ni,2.36,0.0
+Ni,3.44,0.0
+Ni,4.14,0.0
+Ni,5.27,13.9
+Ni,5.51,12.6
+Ni,5.76,29.2
+Ni,5.99,52.3
+Ni,6.32,78.6
+Ni,6.69,93.7
+Ni,6.95,96.6
+Ni,7.21,97.6
+Ni,7.46,97.9
+Ni,7.76,98.0
+Ni,8.00,97.6
+Li,1.00,0.0
+Li,2.00,0.0
+Li,3.00,0.0
+Li,4.00,0.0
+Li,5.00,0.0
+Li,5.27,3.6
+Li,5.51,2.3
+Li,5.76,2.9
+Li,5.99,6.5
+Li,6.33,12.6
+Li,6.69,25.2
+Li,6.95,32.8
+Li,7.20,41.5
+Li,7.46,47.4
+Li,7.76,50.5
+Li,8.00,55.1
+Na,1.00,0.0
+Na,2.00,0.0
+Na,3.00,0.0
+Na,4.00,0.0
+Na,5.00,0.0
+Na,5.50,2.0
+Na,6.00,5.0
+Na,6.50,10.0
+Na,7.00,18.0
+Na,7.50,23.0
+Na,8.00,28.0

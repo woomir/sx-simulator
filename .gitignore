@@ -32,3 +32,14 @@ deliverables/**/slides_build/node_modules/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Claude Code local session
+.claude/
+
+# Confidential field operation data
+data/BM-CY.csv
+data/Ni_Cy.csv
+scripts/field_validation_main.py
+
+# Generated HTML reports (large Plotly.js inline, regenerable)
+reports/*.html
