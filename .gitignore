@@ -43,3 +43,6 @@ scripts/field_validation_main.py
 
 # Generated HTML reports (large Plotly.js inline, regenerable)
 reports/*.html
+
+# Branch comparison worktrees
+.worktrees/
