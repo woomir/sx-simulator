@@ -1,12 +1,18 @@
 from typing import Optional
 
 """
-Extraction Isotherm Module (Vasilyev 경쟁 추출 모델 기반)
-=========================================================
+Extraction Isotherm Module (Vasilyev 경쟁 추출 모델 기반, 5PL Richards)
+======================================================================
 pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 모듈.
 
-기본 시그모이드 함수로 pH-추출률 관계를 근사:
-  E(pH, T) = E_max / (1 + exp(-k(T) · (pH - pH50(T))))
+5PL Richards 함수로 pH-추출률 관계를 근사 (v2.2):
+  E(pH, T) = E_max / (1 + exp(-k(T) · (pH - pH50(T))))^(1/nu)
+
+  nu = 1: 기존 4PL 시그모이드와 동일 (대칭)
+  nu > 1: 포화 구간이 더 완만 (E_max < 100% 금속에 적합)
+
+  Richards, F.J. (1959); Gottschalk & Dunn (2005) 60,000+ 곡선 분석
+  Jantunen et al. (2022) Fig.2b(D2EHPA), Fig.3b(Cyanex272) Li 곡선 참조
 
 온도 보정:
   pH50(T) = pH50(T_ref) + beta · (T - T_ref) + alpha · log(C_ext/C_ref)
@@ -14,7 +20,7 @@ pH에 따른 금속별 추출률(%) 및 분배 계수(D)를 계산하는 핵심 
 
 Vasilyev 경쟁 추출 모델 (기본 엔진):
   D_adjusted(M) = D_sigmoid(M) × ([HA]_free / C_ext)^n_ext(M)
-  Vasilyev et al. (2019)의 공유 추출제 풀 개념을 시그모이드와 결합
+  Vasilyev et al. (2019)의 공유 추출제 풀 개념을 Richards 모델과 결합
   모든 stage 평형 계산이 이 경쟁 모델을 통해 수행됩니다.
 """
 
@@ -196,6 +202,10 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     """
     주어진 pH와 온도에서 특정 금속의 추출률(%)을 계산합니다.
 
+    5PL Richards 함수 사용:
+      E(pH) = E_max / (1 + exp(-k * (pH - pH50)))^(1/nu)
+      nu = 1 이면 기존 4PL 시그모이드와 동일.
+
     Parameters
     ----------
     pH : float
@@ -216,6 +226,7 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     """
     params = _get_metal_params(metal, extractant, extractant_params)
     E_max = params["E_max"]
+    nu = params.get("nu", 1.0)  # Richards 비대칭 파라미터 (기본 1.0 = 4PL 호환)
 
     pH50_eff = get_effective_pH50(metal, extractant, C_ext, temperature, extractant_params)
     pH50_eff -= get_saponification_pH50_shift(
@@ -225,7 +236,7 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     )
     k_eff = get_effective_k(metal, extractant, temperature, extractant_params)
 
-    # 시그모이드 함수
+    # 5PL Richards 함수
     exponent = -k_eff * (pH - pH50_eff)
     # overflow 방지
     if exponent > 500:
@@ -233,7 +244,12 @@ def extraction_efficiency(pH: float, metal: str, extractant: str, C_ext: float,
     elif exponent < -500:
         return E_max
 
-    E = E_max / (1.0 + math.exp(exponent))
+    base = 1.0 + math.exp(exponent)
+    # nu = 1 이면 기존 4PL과 동일; nu > 1 이면 포화구간 완만
+    if abs(nu - 1.0) < 1e-9:
+        E = E_max / base
+    else:
+        E = E_max / (base ** (1.0 / nu))
     return E
 
 

@@ -28,7 +28,7 @@ from .extraction_isotherm import (
     pka_dissociation_factor,
 )
 from .config import EXTRACTANT_PKA
-from .fitting import fit_sigmoid, sigmoid_model
+from .fitting import fit_sigmoid, sigmoid_model, fit_richards, richards_model
 
 
 def _metal_color_list(metals: list, metal_colors: dict) -> list:
@@ -1129,7 +1129,18 @@ def render_fitting_tab(extractant: str, default_metals: list) -> None:
 
         st.markdown(f"##### 🔹 {metal_name}")
 
-        fit_result = fit_sigmoid(pH_vals, E_vals)
+        # 4PL과 5PL 모두 피팅 시도
+        fit_result_4pl = fit_sigmoid(pH_vals, E_vals)
+        fit_result_5pl = fit_richards(pH_vals, E_vals)
+
+        # 5PL 결과가 유효하면 우선 사용, 아니면 4PL로 fallback
+        use_5pl = (
+            fit_result_5pl["success"]
+            and fit_result_5pl["r_squared"] >= fit_result_4pl.get("r_squared", 0)
+        )
+        fit_result = fit_result_5pl if use_5pl else fit_result_4pl
+        model_label = "5PL Richards" if use_5pl else "4PL Sigmoid"
+
         if not fit_result["success"]:
             st.error(f"피팅 실패: {fit_result.get('error', 'Unknown error')}")
             continue
@@ -1139,14 +1150,17 @@ def render_fitting_tab(extractant: str, default_metals: list) -> None:
         errors = fit_result["errors"]
 
         with res_col1:
-            st.markdown("**피팅 파라미터:**")
-            param_df = pd.DataFrame(
-                [
-                    {"파라미터": "pH₅₀", "값": params["pH50"], "±95%CI": errors["pH50_err"]},
-                    {"파라미터": "k", "값": params["k"], "±95%CI": errors["k_err"]},
-                    {"파라미터": "E_max (%)", "값": params["E_max"], "±95%CI": errors["E_max_err"]},
-                ]
-            )
+            st.markdown(f"**피팅 파라미터 ({model_label}):**")
+            param_rows = [
+                {"파라미터": "pH₅₀", "값": params["pH50"], "±95%CI": errors["pH50_err"]},
+                {"파라미터": "k", "값": params["k"], "±95%CI": errors["k_err"]},
+                {"파라미터": "E_max (%)", "값": params["E_max"], "±95%CI": errors["E_max_err"]},
+            ]
+            if "nu" in params:
+                param_rows.append(
+                    {"파라미터": "ν (비대칭)", "값": params["nu"], "±95%CI": errors.get("nu_err", 0.0)}
+                )
+            param_df = pd.DataFrame(param_rows)
             st.dataframe(param_df, use_container_width=True, hide_index=True)
             st.metric("R²", f"{fit_result['r_squared']:.4f}")
 
@@ -1163,19 +1177,22 @@ def render_fitting_tab(extractant: str, default_metals: list) -> None:
             )
 
             pH_fine = np.linspace(float(min(pH_vals)) - 0.5, float(max(pH_vals)) + 0.5, 200)
-            E_fit = sigmoid_model(pH_fine, params["pH50"], params["k"], params["E_max"])
+            if use_5pl and "nu" in params:
+                E_fit = richards_model(pH_fine, params["pH50"], params["k"], params["E_max"], params["nu"])
+            else:
+                E_fit = sigmoid_model(pH_fine, params["pH50"], params["k"], params["E_max"])
             fig_fit.add_trace(
                 go.Scatter(
                     x=pH_fine,
                     y=E_fit,
                     mode="lines",
-                    name="피팅 곡선",
+                    name=f"피팅 곡선 ({model_label})",
                     line=dict(color="#0f3460", width=2),
                 )
             )
             fig_fit.update_yaxes(title="추출률 (%)")
             fig_fit.update_layout(
-                title=f"{metal_name} 피팅 결과 ({fit_model})",
+                title=f"{metal_name} 피팅 결과 ({model_label})",
                 xaxis_title="pH",
                 height=350,
                 template="plotly_white",
@@ -1187,6 +1204,8 @@ def render_fitting_tab(extractant: str, default_metals: list) -> None:
                 st.session_state.custom_params[extractant][metal_name]["pH50"] = params["pH50"]
                 st.session_state.custom_params[extractant][metal_name]["k"] = params["k"]
                 st.session_state.custom_params[extractant][metal_name]["E_max"] = params["E_max"]
+                if "nu" in params:
+                    st.session_state.custom_params[extractant][metal_name]["nu"] = params["nu"]
                 st.success(f"{metal_name} 파라미터가 적용되었습니다! 페이지를 새로고침하면 시뮬레이션에 반영됩니다.")
                 st.rerun()
 

@@ -8,8 +8,12 @@ SX Simulator Configuration
 추출 반응 메커니즘:
   M²⁺(aq) + n(HA)₂(org) → M(A₂)_n(org) + 2nH⁺(aq)
 
-시그모이드 함수로 pH-추출률 관계를 근사:
-  E(pH) = E_max / (1 + exp(-k * (pH - pH50)))
+5PL Richards 함수로 pH-추출률 관계를 근사 (v2.2):
+  E(pH) = E_max / (1 + exp(-k * (pH - pH50)))^(1/nu)
+
+  nu = 1 일 때 기존 4PL 시그모이드와 동일.
+  nu > 1 일 때 포화 구간이 더 완만 (E_max에 천천히 접근).
+  Richards, F.J. (1959) "A Flexible Growth Function for Empirical Use."
 
 파라미터:
   - pH50     : 추출률이 50%에 도달하는 pH
@@ -17,6 +21,7 @@ SX Simulator Configuration
   - E_max    : 최대 추출률 (%)
   - n_H      : 금속 1몰 추출 시 방출되는 H⁺ 몰수
   - n_ext    : 금속 1몰 추출 시 소비되는 추출제 dimer (HA)₂ 몰수
+  - nu       : Richards 비대칭 파라미터 (1.0=대칭, >1=포화구간 완만)
   - alpha    : 추출제 농도 감도 계수 (pH50 보정용)
   - C_ref    : 기준 추출제 농도 (M)
 
@@ -77,6 +82,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 3.5,       # Mn은 가장 먼저 추출됨
             "k": 3.0,          # 비교적 급격한 전이
             "E_max": 99.5,     # 최대 추출률 (%)
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,          # Mn²⁺ → 2H⁺ 방출
             "n_ext": 2,        # Mn²⁺ + 2(HA)₂ → MnA₂(HA)₂ + 2H⁺
             "alpha": 0.8,      # 추출제 농도 감도
@@ -88,6 +94,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 4.0,       # Mn 다음으로 추출
             "k": 3.5,          # 꽤 급격한 전이
             "E_max": 99.5,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,          # Co²⁺ → 2H⁺ 방출 (dimer 복합체)
             "n_ext": 2,        # Co²⁺ + 2(HA)₂ → CoA₂(HA)₂ + 2H⁺
             "alpha": 0.8,
@@ -99,6 +106,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 5.8,       # 문헌 기본값
             "k": 2.5,          # 상대적으로 완만한 전이
             "E_max": 99.0,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,          # Ni²⁺ → 2H⁺ 방출
             "n_ext": 2,        # Ni²⁺ + 2(HA)₂ → NiA₂(HA)₂ + 2H⁺
             "alpha": 0.7,
@@ -107,9 +115,12 @@ LITERATURE_BASE_PARAMS = {
             "gamma": 0.006,
         },
         "Li": {
-            "pH50": 8.0,       # 매우 높은 pH에서만 추출
+            "pH50": 6.630,     # 5PL 보정: 6.5 + ln(2^1.2-1)/2.0 = +0.130
+                                # Jantunen et al. (2022) Fig.3b 기반 + nu 보정
             "k": 2.0,          # 완만한 전이
-            "E_max": 95.0,
+            "E_max": 55.0,     # Fig.3b 기반: Cyanex272 Li 추출률 pH 8에서 ~55% 포화
+                                # Li⁺ 단가 양이온으로 인산계 추출제 친화도 낮음 + Na 경쟁
+            "nu": 1.2,         # 약한 비대칭: Fig.3b 곡선 형태 반영 (포화 접근 약간 완만)
             "n_H": 1,          # Li⁺ → 1H⁺ 방출
             "n_ext": 1,        # Li⁺ + (HA)₂ → LiA·HA + H⁺
             "alpha": 0.5,
@@ -122,6 +133,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 1.85,      # Zn은 Mn보다도 낮은 pH에서 추출
             "k": 3.5,
             "E_max": 99.5,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,          # Zn²⁺ → 2H⁺ 방출
             "n_ext": 2,
             "alpha": 0.9,
@@ -130,9 +142,10 @@ LITERATURE_BASE_PARAMS = {
             "gamma": 0.007,
         },
         "Ca": {
-            "pH50": 5.5,       # Ni보다 약간 낮은 pH에서 추출
+            "pH50": 5.69,      # 5PL 보정: 5.5 + ln(2^1.3-1)/2.0 = +0.190
             "k": 2.0,
             "E_max": 90.0,
+            "nu": 1.3,         # 비대칭: E_max=90%, 열역학적 한계에 의한 완만한 포화
             "n_H": 2,          # Ca²⁺ → 2H⁺ 방출
             "n_ext": 2,
             "alpha": 0.6,
@@ -141,9 +154,10 @@ LITERATURE_BASE_PARAMS = {
             "gamma": 0.003,
         },
         "Mg": {
-            "pH50": 5.7,       # Ca와 유사, 약간 높은 pH
+            "pH50": 5.947,     # 5PL 보정: 5.7 + ln(2^1.4-1)/2.0 = +0.247
             "k": 2.0,
             "E_max": 85.0,
+            "nu": 1.4,         # 비대칭: E_max=85%, 가장 낮은 추출 친화도 → 완만한 포화
             "n_H": 2,          # Mg²⁺ → 2H⁺ 방출
             "n_ext": 2,
             "alpha": 0.6,
@@ -166,6 +180,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 2.5,       # D2EHPA에서 Mn은 매우 낮은 pH에서 추출
             "k": 3.5,
             "E_max": 99.5,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,
             "n_ext": 2,
             "alpha": 0.9,
@@ -177,6 +192,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 3.5,       # pH < 5에서 급격 증가
             "k": 3.0,
             "E_max": 99.5,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,
             "n_ext": 2,
             "alpha": 0.9,
@@ -188,6 +204,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 4.5,
             "k": 2.5,
             "E_max": 99.0,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,
             "n_ext": 2,
             "alpha": 0.8,
@@ -196,9 +213,12 @@ LITERATURE_BASE_PARAMS = {
             "gamma": 0.005,
         },
         "Li": {
-            "pH50": 6.5,       # pH > 5.5에서 추출 시작
-            "k": 2.0,
-            "E_max": 90.0,     # Li 최대 추출률이 상대적으로 낮음
+            "pH50": 4.453,     # 5PL 보정: 4.3 + ln(2^1.3-1)/2.5 = +0.153
+                                # Jantunen et al. (2022) Fig.2b 기반 + nu 보정
+            "k": 2.5,          # Fig.2b 곡선 형태 반영 (약간 급격한 전이)
+            "E_max": 48.0,     # Fig.2b 기반: D2EHPA Li 추출률 pH 8.5에서 ~48% 포화
+                                # Li⁺ 단가 양이온으로 D2EHPA 친화도 낮음 + Na 경쟁
+            "nu": 1.3,         # 약한 비대칭: Fig.2b 곡선에서 고pH 포화 접근 약간 완만
             "n_H": 1,
             "n_ext": 1,
             "alpha": 0.6,
@@ -211,6 +231,7 @@ LITERATURE_BASE_PARAMS = {
             "pH50": 1.5,       # D2EHPA에서 Zn은 가장 낮은 pH에서 추출
             "k": 4.0,
             "E_max": 99.5,
+            "nu": 1.0,         # 대칭 (E_max ≈ 100%)
             "n_H": 2,
             "n_ext": 2,
             "alpha": 1.0,
@@ -219,9 +240,10 @@ LITERATURE_BASE_PARAMS = {
             "gamma": 0.006,
         },
         "Ca": {
-            "pH50": 3.5,       # pH 3.0~3.5에서 72% 추출
+            "pH50": 3.69,      # 5PL 보정: 3.5 + ln(2^1.3-1)/2.0 = +0.190
             "k": 2.0,
             "E_max": 90.0,
+            "nu": 1.3,         # 비대칭: E_max=90%, 알칼리토류 금속 완만한 포화
             "n_H": 2,
             "n_ext": 2,
             "alpha": 0.7,
@@ -230,9 +252,10 @@ LITERATURE_BASE_PARAMS = {
             "gamma": 0.004,
         },
         "Mg": {
-            "pH50": 4.5,       # 문헌 기본값
+            "pH50": 4.747,     # 5PL 보정: 4.5 + ln(2^1.4-1)/2.0 = +0.247
             "k": 2.0,
             "E_max": 85.0,
+            "nu": 1.4,         # 비대칭: E_max=85%, 가장 낮은 친화도 → 완만한 포화
             "n_H": 2,
             "n_ext": 2,
             "alpha": 0.7,
@@ -256,17 +279,17 @@ SITE_PARAMETER_OVERRIDES = {
         "k": 2.0,      # Data1/2와 Data3 사이 전이 폭 균형화
     },
     ("Cyanex 272", "Li"): {
-        "pH50": 8.10,  # Data1/2 과소추출과 Data3 과대추출 사이 절충
-        "k": 1.8,
+        "pH50": 6.630,  # 5PL 보정: 6.5 + ln(2^1.2-1)/2.0 (Fig.3b 기반 + nu 보정)
+        "k": 2.0,
     },
     ("D2EHPA", "Li"): {
-        "pH50": 6.3,  # field 기준 Li 잔여오차 완화
+        "pH50": 4.453,  # 5PL 보정: 4.3 + ln(2^1.3-1)/2.5 (Fig.2b 기반 + nu 보정)
     },
     ("D2EHPA", "Co"): {
         "E_max": 99.0,  # trace Co 과추출 완화
     },
     ("D2EHPA", "Mg"): {
-        "pH50": 3.2,  # 현장 데이터 기반 하향 보정
+        "pH50": 3.447,  # 5PL 보정: 3.2 + ln(2^1.4-1)/2.0 (현장 기반 + nu 보정)
     },
 }
 
@@ -322,7 +345,7 @@ def get_parameter_profile(profile_name: str = "field_calibrated") -> dict:
 # =============================================================================
 DEFAULT_METALS = ["Li", "Ni", "Co", "Mn", "Ca", "Mg", "Zn"]
 DEFAULT_EXTRACTANT = "Cyanex 272"
-DEFAULT_MODEL_TYPE = "sigmoid"
+DEFAULT_MODEL_TYPE = "richards_5PL"
 DEFAULT_TEMPERATURE = 25.0  # °C (기준 온도, T_ref)
 T_REF = 25.0                # 온도 보정 기준점 (°C)
 DEFAULT_STAGES = 4
